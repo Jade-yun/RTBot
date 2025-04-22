@@ -15,14 +15,15 @@ enum class ShmMode {
     Attacher   // 从进程，附加已有共享内存
 };
 
-class SharedMemoryManager {
+class SharedMemoryManager 
+{
 public:
     static SharedMemoryManager& getInstance();
 
     bool init(ShmMode mode); // 初始化共享内存
     void destroy();          // 关闭共享内存
 
-    SharedData* getData() const { return data_; }
+    SharedData* getData() const;
 
 private:
     SharedMemoryManager() = default;

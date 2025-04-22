@@ -1,12 +1,14 @@
 #include "SharedMemoryManager.h"
 #include <iostream>
 
-SharedMemoryManager& SharedMemoryManager::getInstance() {
+SharedMemoryManager& SharedMemoryManager::getInstance() 
+{
     static SharedMemoryManager instance;
     return instance;
 }
 
-bool SharedMemoryManager::init(ShmMode mode) {
+bool SharedMemoryManager::init(ShmMode mode) 
+{
     if (shm_fd_ != -1) {
         std::cerr << "[SHM] Already initialized." << std::endl;
         return false;
@@ -49,8 +51,6 @@ bool SharedMemoryManager::init(ShmMode mode) {
 
     // 如果是创建者，初始化数据
     if (mode == ShmMode::Creator) {
-        data_->command.new_cmd = false;
-        data_->state.heartbeat_counter = 0;
         // TO DO 
         // initialize data here 
 
@@ -60,7 +60,8 @@ bool SharedMemoryManager::init(ShmMode mode) {
     return true;
 }
 
-void SharedMemoryManager::destroy() {
+void SharedMemoryManager::destroy()
+ {
     if (data_) {
         munmap(data_, SHM_SIZE);
         data_ = nullptr;
@@ -70,6 +71,8 @@ void SharedMemoryManager::destroy() {
         shm_fd_ = -1;
     }
 }
+
+SharedData* SharedMemoryManager::getData() const { return data_; }
 
 SharedMemoryManager::~SharedMemoryManager() {
     destroy();

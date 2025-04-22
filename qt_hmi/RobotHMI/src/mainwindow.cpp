@@ -45,9 +45,9 @@ MainWindow::MainWindow(QWidget *parent)
     QTimer* timer = new QTimer(this);
     timer->start(1 * 1000);
 
-    connect(timer, &QTimer::timeout, this, [=](){
-        qDebug() << data->state.heartbeat_counter;
-    });
+//    connect(timer, &QTimer::timeout, this, [=](){
+//        qDebug() << data->state.heartbeat_counter;
+//    });
 }
 
 MainWindow::~MainWindow()
@@ -67,10 +67,10 @@ void MainWindow::on_spinBoxVelocity_valueChanged(int arg1)
 
 void MainWindow::on_btnStart_clicked()
 {
-    data->command.mode = ControlMode::MOVE_JOINT;
+//    data->command.mode = ControlMode::MOVE_JOINT;
 }
 
 void MainWindow::on_btnStop_clicked()
 {
-    data->command.mode = ControlMode::STOP;
+//    data->command.mode = ControlMode::STOP;
 }

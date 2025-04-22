@@ -29,7 +29,9 @@ public:
     ~EtherCATInterface();
 
     bool init(const char* ifname, int axis_num);
-    void update();
+
+    void read();
+    void write();
 
     void writeTargetPosition(int axis, int32_t value);
     void writeTargetTorque(int axis, int16_t value);

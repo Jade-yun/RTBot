@@ -1,4 +1,4 @@
-#include "ethercat_interface.h"
+#include "EtherCATInterface.h"
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -53,12 +53,6 @@ int main() {
         return -1;
     }
 
-    // 设置模式：通过 SDO 设置操作模式，0x6060:0
-    // for (int i = 0; i < AXIS_NUM; ++i) {
-    //     int8_t mode_val = (axis_mode[i] == ControlMode::CSP) ? 8 : 10;
-    //     // ec_iface.setOperationMode(i, mode_val); // 8: CSP, 10: CST
-    // }
-
     std::cout << "Start motion loop...\n";
     struct timespec next;
     clock_gettime(CLOCK_MONOTONIC, &next);
@@ -69,7 +63,7 @@ int main() {
     while (true) {
         wait_until(next);
 
-        ec_iface.update();  // 获取输入PDO数据
+        ec_iface.read();  // 获取输入PDO数据
 
         for (int i = 0; i < AXIS_NUM; ++i) {
             enableDrive(ec_iface, i);
@@ -83,7 +77,7 @@ int main() {
             }
         }
 
-        ec_iface.update();  // 写出PDO数据
+        ec_iface.write();  // 写出PDO数据
     }
 
     return 0;

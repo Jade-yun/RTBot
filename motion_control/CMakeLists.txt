@@ -21,8 +21,8 @@ add_executable(${PROJECT_NAME} ${SRC})
 # 头文件路径
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/shared/include
-    ${CMAKE_SOURCE_DIR}/motion_control
     ${CMAKE_SOURCE_DIR}/third_party/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE
     EtherLab::ethercat 

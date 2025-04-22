@@ -13,19 +13,23 @@ int main() {
 
     SharedData* data = shm.getData();
 
+    RtCommand cmd;
+    RtState state;
     while (true) 
     {
-        std::cout << "mode: " << (int)data->command.mode << std::endl;
-        
-        if (data->command.mode == ControlMode::STOP) {
-            std::cout << "Stop " << std::endl;
+        data->cmd_queue.pop(cmd);
+        if (cmd.mode == ControlMode::IDLE) {
+            if (cmd.mode == 1) {  
+            std::cout << "it is in idle state." << std::endl;
         }
-        else {
-            data->state.heartbeat_counter += 1;
+        else if (cmd.mode == ControlMode::STOP) {
+            std::cout << "it is stop.\n";
         }
 
+        state.heartbeat_counter += 1;
+        data->state_buffer.write(state);
 
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     return 0;

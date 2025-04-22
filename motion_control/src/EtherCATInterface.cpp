@@ -1,4 +1,4 @@
-#include "ethercat_interface.h"
+#include "EtherCATInterface.h"
 #include <iostream>
 #include <string.h>
 
@@ -90,6 +90,7 @@ void EtherCATInterface::update() {
     ecrt_master_send(master);
 }
 
+
 void EtherCATInterface::writeTargetPosition(int axis, int32_t value) {
     EC_WRITE_S32(domain_pd_ + offsets_[axis].target_position, value);
 }
@@ -117,32 +118,3 @@ int32_t EtherCATInterface::readActualVelocity(int axis) const {
 int16_t EtherCATInterface::readActualTorque(int axis) const {
     return EC_READ_S16(domain_pd_ + offsets_[axis].actual_torque);
 }
-
-
-// bool EtherCATInterface::isDCSyncActive() const {
-//     if (!master) return false;
-
-//     ec_master_state_t* state;
-//     ecrt_master_state(master, state);
-//     return state->al_states != 0;
-// }
-
-
-// int64_t EtherCATInterface::getDCSyncDelay() const {
-//     if (!master) return -1;
-
-//     ec_master_clock_t master_clock;
-//     if (ecrt_master_get_clock(master, &master_clock)) {
-//         std::cerr << "Failed to get master clock" << std::endl;
-//         return -1;
-//     }
-
-//     int64_t system_time = 0;
-//     if (ecrt_master_get_time(master, &system_time)) {
-//         std::cerr << "Failed to get DC system time" << std::endl;
-//         return -1;
-//     }
-
-//     int64_t app_time = ecrt_master_application_time(master);
-//     return system_time - app_time;
-// }
