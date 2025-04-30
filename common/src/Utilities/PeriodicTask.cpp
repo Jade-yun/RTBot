@@ -115,12 +115,12 @@ void PeriodicTask::loopFunction()
 
 #ifdef linux
   itimerspec timerSpec;
-  timerSpec.it_interval.tv_sec = seconds;
-  timerSpec.it_value.tv_sec = seconds;
+  timerSpec.it_interval.tv_sec = seconds;  //周期性间隔
+  timerSpec.it_value.tv_sec = seconds;     //首次触发时间
   timerSpec.it_value.tv_nsec = nanoseconds;
   timerSpec.it_interval.tv_nsec = nanoseconds;
 
-  timerfd_settime(timerFd, 0, &timerSpec, nullptr);
+  timerfd_settime(timerFd, 0, &timerSpec, nullptr);  //激活定时器
 #endif
   unsigned long long missed = 0;
 
@@ -133,7 +133,7 @@ void PeriodicTask::loopFunction()
     run();
     _lastRuntime = (float)t.getSeconds();
 #ifdef linux
-    int m = read(timerFd, &missed, sizeof(missed));
+    int m = read(timerFd, &missed, sizeof(missed));  //run时间小-等待周期结束
     (void)m;
 #endif
     _maxPeriod = std::max(_maxPeriod, _lastPeriodTime);

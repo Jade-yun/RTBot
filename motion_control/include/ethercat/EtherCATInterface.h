@@ -75,7 +75,6 @@ private:
 
     struct timespec time;
 
-
     // EtherCAT master, domain, slaves
     ec_master_t* master_;
     ec_domain_t* domain_;

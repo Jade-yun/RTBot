@@ -38,7 +38,6 @@ void monitorEStop()
 int main()
 {
 
-
     PeriodicTaskManager taskManager;
 
     EtherCATInterface ethercatIf;

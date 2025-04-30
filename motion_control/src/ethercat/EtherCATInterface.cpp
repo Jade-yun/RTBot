@@ -314,112 +314,113 @@ void EtherCATInterface::cyclicTask()
 void EtherCATInterface::runTask()
 {
 
-    // 更新和发送过程数据
-    updateProcessData();
+    // // 更新和发送过程数据
+    // updateProcessData();
 
-    // cycle_counter++;
-    // if(!(cycle_counter % 500))
+    // // cycle_counter++;
+    // // if(!(cycle_counter % 500))
+    // // {
+    // //     cycle_counter = 0;
+    // //     check_master_state();
+    // //     for(int i = 0; i < NUM_SLAVES; i++)
+    // //     {
+    // //         check_slave_config_states(slave_config[i], i);
+    // //     }
+    // // }
+
+    // // 设置电机控制模式
+    // for (int i = 0; i < NUM_SLAVES; i++)
     // {
-    //     cycle_counter = 0;
-    //     check_master_state();
-    //     for(int i = 0; i < NUM_SLAVES; i++)
+    //     MotorMode mode = CSP;
+    //     EC_WRITE_S8(domain_pd_ + pdo_offsets_[i].control_mode, mode);
+    // }
+
+    // // read status word
+    // uint16_t state_value[NUM_SLAVES];
+    // for (int i = 0; i < NUM_SLAVES; i++)
+    // {
+    //     state_value[i] = EC_READ_U16(domain_pd_ + pdo_offsets_[i].status_word); // 读取电机状态字
+    // }
+
+    // cia402_state_t servo_state[NUM_SLAVES];
+
+    // bool all_switched_on = false;
+    // for (int16_t i = 0; i < NUM_SLAVES; i++)
+    // {
+    //     servo_state[i] = get_axis_state(state_value[i]);
+    //     all_switched_on = all_switched_on && (servo_state[i] == switched_on);
+    // }
+
+    // // enable motor
+    // if (motor_start_flag == 1)
+    // {
+    //     for (int16_t i = 0; i < NUM_SLAVES; i++)
     //     {
-    //         check_slave_config_states(slave_config[i], i);
+    //         switch (servo_state[i])
+    //         {
+    //         case (no_ready_to_switch_on):
+    //             EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x80);
+    //             break;
+    //         case (switch_on_disable):
+    //             EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x06);
+    //             break;
+    //         case (ready_to_switch_on):
+    //             EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x07);
+    //             break;
+    //             /*
+    //             case (switched_on):
+    //                     EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].Control_word[i], 0x0f);
+    //                     break; */
+
+    //         case (operation_enable):
+    //         {
+    //             auto value = (EC_READ_S32(domain_pd_ + pdo_offsets_[i].position_actual_value) + 0x3fff);
+    //             EC_WRITE_U32(domain_pd_ + pdo_offsets_[i].target_position, value);
+    //             break;
+    //         }
+    //         case (quick_stop_active):
+    //         case (fault_reaction_active):
+    //             break;
+    //         case (fault):
+    //             EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x80);
+    //             break;
+    //         default:
+    //             break;
+    //         }
+
+    //         if (all_switched_on)
+    //         {//enable
+                
+    //             EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x0f);
+    //         }
+    //     }
+    // }
+    // else if (motor_start_flag == 0)
+    // {
+    //     // disable motor
+    //     for (int16_t i = 0; i < NUM_SLAVES; i++)
+    //     {
+    //         EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x00);
     //     }
     // }
 
-    // 设置电机控制模式
-    for (int i = 0; i < NUM_SLAVES; i++)
-    {
-        MotorMode mode = CSP;
-        EC_WRITE_S8(domain_pd_ + pdo_offsets_[i].control_mode, mode);
-    }
+    // // read current position
+    // static uint16_t s = 0;
+    // if (!(s % 100))
+    // {
+    //     for (int i = 0; i < NUM_SLAVES; i++)
+    //     printf("pos%d: %x", i, EC_READ_U32(domain_pd_ + pdo_offsets_[i].position_actual_value));
+    // }
 
-    // read status word
-    uint16_t state_value[NUM_SLAVES];
-    for (int i = 0; i < NUM_SLAVES; i++)
-    {
-        state_value[i] = EC_READ_U16(domain_pd_ + pdo_offsets_[i].status_word); // 读取电机状态字
-    }
+    // sendProcessData();
 
-    cia402_state_t servo_state[NUM_SLAVES];
+    // // sync every cycle
+    // clock_gettime(CLOCK_TO_USE, &time);
+    // ecrt_master_sync_reference_clock_to(master_, TIMESPEC2NS(time));
+    // ecrt_master_sync_slave_clocks(master_);
 
-    bool all_switched_on = false;
-    for (int16_t i = 0; i < NUM_SLAVES; i++)
-    {
-        servo_state[i] = get_axis_state(state_value[i]);
-        all_switched_on = all_switched_on && (servo_state[i] == switched_on);
-    }
-
-    // enable motor
-    if (motor_start_flag == 1)
-    {
-        for (int16_t i = 0; i < NUM_SLAVES; i++)
-        {
-            switch (servo_state[i])
-            {
-            case (no_ready_to_switch_on):
-                EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x80);
-                break;
-            case (switch_on_disable):
-                EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x06);
-                break;
-            case (ready_to_switch_on):
-                EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x07);
-                break;
-                /*
-                case (switched_on):
-                        EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].Control_word[i], 0x0f);
-                        break; */
-
-            case (operation_enable):
-            {
-                auto value = (EC_READ_S32(domain_pd_ + pdo_offsets_[i].position_actual_value) + 0x3fff);
-                EC_WRITE_U32(domain_pd_ + pdo_offsets_[i].target_position, value);
-                break;
-            }
-            case (quick_stop_active):
-            case (fault_reaction_active):
-                break;
-            case (fault):
-                EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x80);
-                break;
-            default:
-                break;
-            }
-
-            if (all_switched_on)
-            {
-                
-                EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x0f);
-            }
-        }
-    }
-    else if (motor_start_flag == 0)
-    {
-        // disable motor
-        for (int16_t i = 0; i < NUM_SLAVES; i++)
-        {
-            EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x00);
-        }
-    }
-
-    // read current position
-    static uint16_t s = 0;
-    if (!(s % 100))
-    {
-        for (int i = 0; i < NUM_SLAVES; i++)
-        printf("pos%d: %x", i, EC_READ_U32(domain_pd_ + pdo_offsets_[i].position_actual_value));
-    }
-
-    sendProcessData();
-
-    // sync every cycle
-    clock_gettime(CLOCK_TO_USE, &time);
-    ecrt_master_sync_reference_clock_to(master_, TIMESPEC2NS(time));
-    ecrt_master_sync_slave_clocks(master_);
-
-    // clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &wakeup_time, NULL);
+    // // clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &wakeup_time, NULL);
+    printf("test\n");
  
 }
 
