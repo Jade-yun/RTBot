@@ -90,10 +90,8 @@ void PeriodicTask::printStatus()
     // printf_color(PrintColor::Red, "|%-20s|%6.4f|%6.4f|%6.4f|%6.4f|%6.4f\n",
     //              _name.c_str(), _lastRuntime, _maxRuntime, _period,
     //              _lastPeriodTime, _maxPeriod);
-    printf("-------------------------------------------------\n");
-    printf("|%-20s|%6.4f|%6.4f|%6.4f|%6.4f|%6.4f\n", _name.c_str(),
-    _lastRuntime, _maxRuntime, _period, _lastPeriodTime, _maxPeriod);
-    printf("-------------------------------------------------\n");
+    printf("\033[31m|%-20s|%6.4f|%6.4f|%6.4f|%6.4f|%6.4f\033[0m\n", _name.c_str(),
+          _lastRuntime, _maxRuntime, _period, _lastPeriodTime, _maxPeriod);
   }
   else
   {

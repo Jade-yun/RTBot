@@ -8,7 +8,7 @@
 #include <cstddef>
 
 #define NUM_JOINTS 6
-#define MAX_TRAJECTORY_POINTS 500 // 支持的最大轨迹点数
+#define MAX_TRAJECTORY_POINTS 512 // 支持的最大轨迹点数
 #define MAX_TRAJECTORY_LIST 8
 #define MAX_CMD_QUEUE_LEN 32      // 命令队列长度 最好为 2 的幂
 #define MAX_TRAJECTORY_SEGMENT 50 // 最大的连续轨迹段数
@@ -150,6 +150,24 @@ struct HighLevelCommand {
         struct {
             uint32_t wait_time_ms;
         } wait_params;
+    };
+};
+
+// 电机控制模式定义 
+enum MotorMode {
+    CSP = 0x08,   // Cyclic Synchronous Position
+    CSV = 0x09,   // Cyclic Synchronous Velocity
+    CST = 0x0A    // Cyclic Synchronous Torque
+  };
+
+// 关节命令
+struct LowLevelCommand { 
+    MotorMode mode;
+    union 
+    {
+        float motor_pos[NUM_JOINTS];  // 每个关节的目标位置
+        float motor_velocity[NUM_JOINTS]; // 每个关节的目标速度
+        float motor_torque[NUM_JOINTS]; // 每个关节的目标力矩
     };
 };
 

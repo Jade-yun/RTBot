@@ -10,13 +10,20 @@ void Robot::init()
 void Robot::planMoveJ(const std::array<float, NUM_JOINTS> &target_positions)
 {
     // 
-    GlobalParams::LowLevelCommand montor_cmd;
+    LowLevelCommand montor_cmd;
 
-    while (GlobalParams::requst_cmd.push(montor_cmd))
+    // 入队列
+    while (!GlobalParams::joint_commands.try_enqueue(montor_cmd))
     {
-        std::this_thread::yield();
-        continue;
+        // std::this_thread::yield();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
+
+    // // 出队列
+    // if (GlobalParams::joint_commands.try_dequeue(montor_cmd)) 
+    // {
+    //     // 
+    // }
 
 }
 

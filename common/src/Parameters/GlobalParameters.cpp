@@ -1,7 +1,8 @@
 #include "Parameters/GlobalParameters.h"
 
 
-std::array<std::atomic<GlobalParams::LowLevelState>, NUM_JOINTS> GlobalParams::joint_state = {};
+std::array<JointState, NUM_JOINTS> GlobalParams::joint_state = {};
 
-boost::lockfree::spsc_queue<TrajectoryPoint,
-    boost::lockfree::capacity<MAX_TRAJECTORY_POINTS>> GlobalParams::traj_buffer;
+moodycamel::ReaderWriterQueue<TrajectoryPoint, MAX_TRAJECTORY_POINTS> GlobalParams::traj_buffer;
+
+moodycamel::ReaderWriterQueue<LowLevelCommand, 128> GlobalParams::joint_commands;

@@ -5,9 +5,18 @@
 
 // #include "ethercat/EtherCATInterface.h"
 #include "Utilities/PeriodicTask.h"
-#include <boost/lockfree/spsc_queue.hpp>
-#include <boost/circular_buffer.hpp>
+#include <readerwriterqueue.h>
 #include <thread>
+#include <cmath>
+#include <random>
+#include <mutex>
+
+std::mutex mutex;
+int index;
+
+
+
+moodycamel::ReaderWriterQueue<double> queue(1024);
 
 class EtherCATInterface
 {
@@ -20,21 +29,63 @@ public:
         return true;
     }
     void runEtherCat(){
-        // printf("hello %d\n", cnt++);
+        // thread_local std::mt19937_64 rng(std::random_device{}());
 
-        for (int i = 0; i < 50000000; i++)
+        // 获取当前时间作为基准
+        auto now = std::chrono::high_resolution_clock::now();
+        auto duration = now.time_since_epoch();
+        double t = std::chrono::duration<double>(duration).count(); // 当前秒数
+    
+        double result = 0.0;
+        const double fundamental_freq = 2.0 * M_PI; // 基频（Hz）
+    
+        // 合成前5次傅里叶级数项：A_n * sin(n * ω * t + φ)
+        for (int n = 1; n <= 5; ++n) {
+            double amplitude = 1.0 / n;                // 振幅随 n 衰减
+            double frequency = n * fundamental_freq;   // 第 n 次谐波
+            double phase = 0.0;                        // 相位偏移
+    
+            result += amplitude * std::sin(frequency * t + phase);
+        }
+
+        if (mutex.try_lock())
         {
-            int j = i * cnt;
-            int k = i^2 + j^2;
+            index++;
+
+            mutex.unlock();
+        }
+
+
+
+    
+        // 将结果放入队列中
+        while (!queue.try_enqueue(result)) {
+            std::this_thread::yield();
         }
     }
     void runEtherCat2(){
         // printf("hello %d\n", cnt++);
 
-        for (int i = 0; i < 500000000; i++)
+        int recv_value;
+        while (queue.try_dequeue(recv_value))
         {
-            int j = i * cnt;
-            int k = i^2 + j^2;
+            double result = 0.0;
+    
+            for (int i = 0; i < 100000; ++i) {
+                double a = recv_value;
+                double b = recv_value;
+        
+                // 示例浮点运算：平方根 + 平方 + sin/cos 等
+                result += std::sqrt(a) * std::sin(b) + std::pow(a, 2.0);
+            }
+
+            if (mutex.try_lock())
+            {
+                index++;
+    
+                mutex.unlock();
+            }
+    
         }
     }
 
@@ -60,15 +111,16 @@ int main()
 
     ethercatIf.init();
     PeriodicMemberFunction<EtherCATInterface> ecatTask2(
-        &taskManager, .01, "ecat2", &EtherCATInterface::runEtherCat2, &ethercatIf);
+        &taskManager, .005, "ecat2", &EtherCATInterface::runEtherCat2, &ethercatIf);
 
     ecatTask2.start();
 
     while (1)
     {
         taskManager.printStatus();
+        // taskManager.printStatusOfSlowTasks();
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000 * 1));
     }
 
     // signal(SIGINT, signal_handler);

@@ -41,14 +41,6 @@ struct PDOOffsets {
   // unsigned int Velocity_actual_value[NUM_SLAVE];
 };
 
-// ---- 电机控制模式定义 ----
-enum MotorMode {
-  CSP = 0x08,   // Cyclic Synchronous Position
-  CSV = 0x09,   // Cyclic Synchronous Velocity
-  CST = 0x0A    // Cyclic Synchronous Torque
-};
-
-
 class EtherCATInterface
 {
 public:
@@ -71,7 +63,6 @@ public:
     // bool checkDomainState();
     // bool checkSlaveState(int slave_id);
 public:
-    MotorMode mode;
     uint8_t motor_start_flag = 0;
 
 private:

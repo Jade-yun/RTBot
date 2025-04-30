@@ -1,15 +1,16 @@
 cmake_minimum_required(VERSION 3.14)
 
+# 包含交叉编译链文件 必须在 project() 之前
+include(${CMAKE_SOURCE_DIR}/cmake/toolchain.cmake)
+
 # 设置项目名称
-project(RTBotControl LANGUAGES CXX)
+project(RT-Robot LANGUAGES CXX)
+
 
 # 设置 C++ 标准
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # set(CMAKE_CXX_EXTENSIONS OFF)  # 禁用 GNU 扩展
-
-# include(${CMAKE_SOURCE_DIR}/cmake/ethercat-config.cmake)
-# include(${CMAKE_SOURCE_DIR}/cmake/toolchain.cmake)
 
 
 # 设置构建类型（Debug 或 Release）
@@ -36,8 +37,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # )
 
 # 添加子模块
-# add_subdirectory(shared)          # 共享内存模块
-add_subdirectory(motion_control)  # 运动控制模块
+# add_subdirectory(motion_control)  # 运动控制模块
 add_subdirectory(common) 
-# add_subdirectory(test) 
+add_subdirectory(test) 
 # add_subdirectory(qt_hmi)        # HMI 模块

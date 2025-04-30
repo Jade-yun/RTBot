@@ -61,6 +61,8 @@ class PeriodicTask {
   float _maxRuntime = 0;
   std::string _name;
   std::thread _thread;
+
+  int _thread_priority = 80;  
 };
 
 /*!
