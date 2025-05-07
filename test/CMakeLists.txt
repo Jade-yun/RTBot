@@ -2,7 +2,7 @@
 # file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/shared_memory/*.cpp)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/)
-set (SRC ${CMAKE_CURRENT_SOURCE_DIR}/test_PeriodicTask.cpp  
+set (SRC ${CMAKE_CURRENT_SOURCE_DIR}/test_HMI.cpp  
     ${CMAKE_SOURCE_DIR}/common/src/Utilities/PeriodicTask.cpp
     )
 
@@ -16,4 +16,4 @@ target_include_directories(test PRIVATE
 )
 
 # 链接库
-target_link_libraries(test PRIVATE pthread)
+target_link_libraries(test PRIVATE pthread robot_utility rt)

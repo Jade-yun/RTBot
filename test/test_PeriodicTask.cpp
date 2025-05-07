@@ -54,9 +54,6 @@ public:
 
             mutex.unlock();
         }
-
-
-
     
         // 将结果放入队列中
         while (!queue.try_enqueue(result)) {

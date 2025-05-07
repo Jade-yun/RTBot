@@ -37,7 +37,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # )
 
 # 添加子模块
-# add_subdirectory(motion_control)  # 运动控制模块
+add_subdirectory(motion_control)  # 运动控制模块
 add_subdirectory(common) 
 add_subdirectory(test) 
 # add_subdirectory(qt_hmi)        # HMI 模块

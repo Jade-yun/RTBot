@@ -27,6 +27,34 @@ PeriodicTask::PeriodicTask(PeriodicTaskManager *taskManager, float period,
   taskManager->addTask(this);
 }
 
+void PeriodicTask::setScheduling(int policy, int priority) 
+{
+  _thread_priority = priority;
+
+  struct sched_param sch_params;
+  sch_params.sched_priority = priority; 
+
+  if (pthread_setschedparam(_thread.native_handle(), policy, &sch_params)) {
+    printf("[PeriodicTask] Failed to set thread %s priority!\n",
+      _name.c_str());
+  }
+}
+
+void PeriodicTask::setThreadPriority(int priority)
+{
+  _thread_priority = priority;
+
+  // 设置线程优先级
+  struct sched_param sch_params;
+  sch_params.sched_priority = priority; 
+  int policy = SCHED_FIFO;
+
+  if (pthread_setschedparam(_thread.native_handle(), policy, &sch_params)) {
+    printf("[PeriodicTask] Failed to set thread %s priority!\n",
+      _name.c_str());
+  }
+}
+
 /*!
  * Begin running task
  */

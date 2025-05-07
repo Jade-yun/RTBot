@@ -134,7 +134,7 @@ struct HighLevelCommand {
 
         // io 控制
         struct {
-            uint32_t io_port;
+            uint32_t channel;
             uint8_t value; // 0 
         } setio_params;
         // 设置参数
@@ -165,9 +165,9 @@ struct LowLevelCommand {
     MotorMode mode;
     union 
     {
-        float motor_pos[NUM_JOINTS];  // 每个关节的目标位置
-        float motor_velocity[NUM_JOINTS]; // 每个关节的目标速度
-        float motor_torque[NUM_JOINTS]; // 每个关节的目标力矩
+        float joint_pos[NUM_JOINTS];  // 每个关节的目标位置
+        float joint_velocity[NUM_JOINTS]; // 每个关节的目标速度
+        float joint_torque[NUM_JOINTS]; // 每个关节的目标力矩
     };
 };
 

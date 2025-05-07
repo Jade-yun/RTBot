@@ -8,6 +8,9 @@
 
 #include "ethercat/EtherCATInterface.h"
 #include "Utilities/PeriodicTask.h"
+#include "Utilities/SharedMemoryManager.h"
+#include "Parameters/SharedDataType.h"
+#include "Robot.h"
 
 void eStopHandler()
 {
@@ -35,26 +38,38 @@ void monitorEStop()
     // }
 }
 
+SharedMemoryManager<SharedMemoryData> shm =
+    SharedMemoryManager<SharedMemoryData>(SharedMemoryManager<SharedMemoryData>::Creator, true);
+
 int main()
 {
-
 
     PeriodicTaskManager taskManager;
 
     EtherCATInterface ethercatIf;
 
-    ethercatIf.init();
-    PeriodicMemberFunction<EtherCATInterface> ecatTask(
-        &taskManager, .001, "ecat", &EtherCATInterface::runTask, &ethercatIf);
+    // ethercatIf.init();
+    // PeriodicMemberFunction<EtherCATInterface> ecatTask(
+    //     &taskManager, 1, "ecat", &EtherCATInterface::runTask, &ethercatIf);
 
-    ecatTask.start();
+    // ecatTask.start();
+    // ecatTask.setThreadPriority(95)
+
+    Robot robot;
+    robot.init();
+
+    PeriodicMemberFunction<Robot> robotTask(
+        &taskManager, 0.0005, "robot", &Robot::controlLoop, &robot);
+
+    robotTask.start();
+    robotTask.setThreadPriority(95);
 
     for (;;)
     {
-        taskManager.printStatus();
-        taskManager.printStatusOfSlowTasks();
+        // taskManager.printStatus();
+        // taskManager.printStatusOfSlowTasks();
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1 * 1000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100 * 1000));
     }
 
     // signal(SIGINT, signal_handler);

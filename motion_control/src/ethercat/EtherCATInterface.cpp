@@ -75,7 +75,7 @@ static constexpr ec_sync_info_t slave_syncs[] = {
     {0xff}};
 
 
-static SharedMemoryManager<SharedMemoryData> shm(SharedMemoryManager<SharedMemoryData>::Creator);
+// static SharedMemoryManager<SharedMemoryData> shm(SharedMemoryManager<SharedMemoryData>::Creator);
 
 EtherCATInterface::EtherCATInterface()
     : running_(false), master_(nullptr), domain_(nullptr), domain_pd_(nullptr)
@@ -344,7 +344,7 @@ void EtherCATInterface::runTask()
 
     cia402_state_t servo_state[NUM_SLAVES];
 
-    bool all_switched_on = false;
+    bool all_switched_on = true;
     for (int16_t i = 0; i < NUM_SLAVES; i++)
     {
         servo_state[i] = get_axis_state(state_value[i]);
