@@ -69,6 +69,11 @@ private:
     void updateProcessData();
     void sendProcessData();
 
+    //EtherCAT check
+    void check_domain_state();
+    void check_master_state();
+    void check_slave_config_states(ec_slave_config_t *sc, int i);
+
     cia402_state_t get_axis_state(uint16_t status_word);
 
     bool running_;
@@ -79,6 +84,11 @@ private:
     ec_master_t* master_;
     ec_domain_t* domain_;
     uint8_t* domain_pd_;
+    ec_domain_state_t domain_state = {};
+    ec_master_state_t master_state = {};
+
+    ec_slave_config_t *slave_config[2];
+    ec_slave_config_state_t sc_state[2] = {};;
 
     std::vector<ec_slave_config_t*> slave_configs_;
 

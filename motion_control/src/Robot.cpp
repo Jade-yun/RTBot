@@ -4,7 +4,7 @@
 
 void Robot::init()
 {
-    shm = SharedMemoryManager<SharedMemoryData>(SharedMemoryManager<SharedMemoryData>::Creator);
+    // shm = SharedMemoryManager<SharedMemoryData>(SharedMemoryManager<SharedMemoryData>::Attacher, true);
 }
 
 void Robot::planMoveJ(const std::array<float, NUM_JOINTS> &target_positions)
