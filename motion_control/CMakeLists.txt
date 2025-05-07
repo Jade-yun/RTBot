@@ -8,6 +8,8 @@ file(GLOB_RECURSE SRC
 
 # 链接第三方库
 # find_package(Threads REQUIRED)  # 确保线程支持
+include(${CMAKE_SOURCE_DIR}/cmake/ethercat-config.cmake)
+
 
 include(${CMAKE_SOURCE_DIR}/cmake/ethercat-config.cmake)
 

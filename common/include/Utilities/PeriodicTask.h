@@ -63,6 +63,15 @@ class PeriodicTask {
   std::thread _thread;
 
   int _thread_priority = 80;  
+
+public:
+  /*
+   * set the priority for the tast thread
+   * it only works when called after the start function 
+   */
+  void setThreadPriority(const int priority = 80);
+  void setScheduling(int policy = SCHED_FIFO, int priority = 80);
+
 };
 
 /*!

@@ -44,19 +44,19 @@ struct PdoEntryInfo
     size_t offset_in_struct;
 };
 
-// 统一表（你以后加成员，只要加一行就好）
-static constexpr PdoEntryInfo pdo_entry_info_table[] = {
-    {0x6040, 0x00, offsetof(PDOOffsets, control_word)},
-    {0x6041, 0x00, offsetof(PDOOffsets, status_word)},
-    {0x607A, 0x00, offsetof(PDOOffsets, target_position)},
-    {0x6064, 0x00, offsetof(PDOOffsets, position_actual_value)},
-    {0x6060, 0x00, offsetof(PDOOffsets, control_mode)},
-    {0x6061, 0x00, offsetof(PDOOffsets, control_mode_display)},
-    {0x60FF, 0x00, offsetof(PDOOffsets, target_velocity)},
-    {0x606C, 0x00, offsetof(PDOOffsets, velocity_actual_value)},
-    {0x6071, 0x00, offsetof(PDOOffsets, target_torque)},
-    {0x6077, 0x00, offsetof(PDOOffsets, torque_actual_value)},
-};
+// // 统一表（你以后加成员，只要加一行就好）
+// static constexpr PdoEntryInfo pdo_entry_info_table[] = {
+//     {0x6040, 0x00, offsetof(PDOOffsets, control_word)},
+//     {0x6041, 0x00, offsetof(PDOOffsets, status_word)},
+//     {0x607A, 0x00, offsetof(PDOOffsets, target_position)},
+//     {0x6064, 0x00, offsetof(PDOOffsets, position_actual_value)},
+//     {0x6060, 0x00, offsetof(PDOOffsets, control_mode)},
+//     {0x6061, 0x00, offsetof(PDOOffsets, control_mode_display)},
+//     {0x60FF, 0x00, offsetof(PDOOffsets, target_velocity)},
+//     {0x606C, 0x00, offsetof(PDOOffsets, velocity_actual_value)},
+//     {0x6071, 0x00, offsetof(PDOOffsets, target_torque)},
+//     {0x6077, 0x00, offsetof(PDOOffsets, torque_actual_value)},
+// };
 
 /*Offsets for PDO entries*/
 static struct{
@@ -285,129 +285,6 @@ bool EtherCATInterface::init()
 
     return true;
 }
-#if 0
-void EtherCATInterface::cyclicTask()
-{
-
-    struct timespec wakeup_time, time;
-    clock_gettime(CLOCK_MONOTONIC, &wakeup_time);
-
-    while (running_)
-    {
-        wakeup_time.tv_nsec += CYCLE_TIME_NS;
-        while (wakeup_time.tv_nsec >= 1000000000)
-        {
-            wakeup_time.tv_nsec -= 1000000000;
-            wakeup_time.tv_sec += 1;
-        }
-
-        // 更新和发送过程数据
-        updateProcessData();
-
-        // cycle_counter++;
-        // if(!(cycle_counter % 500))
-        // {
-        //     cycle_counter = 0;
-        //     check_master_state();
-        //     for(int i = 0; i < NUM_SLAVES; i++)
-        //     {
-        //         check_slave_config_states(slave_config[i], i);
-        //     }
-        // }
-
-        // 设置电机控制模式
-        for (int i = 0; i < NUM_SLAVES; i++)
-        {
-            EC_WRITE_S8(domain_pd_ + pdo_offsets_[i].control_mode, 8);
-        }
-
-        // read status word
-        uint16_t state_value[NUM_SLAVES];
-        for (int i = 0; i < NUM_SLAVES; i++)
-        {
-            state_value[i] = EC_READ_U16(domain_pd_ + pdo_offsets_[i].status_word); // 读取电机状态字
-        }
-
-        cia402_state_t servo_state[NUM_SLAVES];
-
-        bool all_enable = false;
-        for (int16_t i = 0; i < NUM_SLAVES; i++)
-        {
-            servo_state[i] = get_axis_state(state_value[i]);
-            all_enable = all_enable && servo_state[i];
-        }
-
-        // enable motor
-        if (motor_start_flag == 1)
-        {
-            for (int16_t i = 0; i < NUM_SLAVES; i++)
-            {
-                switch (servo_state[i])
-                {
-                case (no_ready_to_switch_on):
-                    EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x80);
-                    break;
-                case (switch_on_disable):
-                    EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x06);
-                    break;
-                case (ready_to_switch_on):
-                    EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x07);
-                    break;
-                    /*
-                    case (switched_on):
-                            EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].Control_word[i], 0x0f);
-                            break; */
-
-                case (operation_enable):
-                    auto value = (EC_READ_S32(domain_pd_ + pdo_offsets_[i].position_actual_value) + 0x3fff);
-                    EC_WRITE_U32(domain_pd_ + pdo_offsets_[i].target_position, value);
-                    break;
-                case (quick_stop_active):
-                case (fault_reaction_active):
-                    break;
-                case (fault):
-                    EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x80);
-                    break;
-                default:
-                    break;
-                }
-
-                if (all_enable)
-                {
-                    
-                    EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x0f);
-                }
-            }
-        }
-        else if (motor_start_flag == 0)
-        {
-            // disable motor
-            for (int16_t i = 0; i < NUM_SLAVES; i++)
-            {
-                EC_WRITE_U16(domain_pd_ + pdo_offsets_[i].control_word, 0x00);
-            }
-        }
-
-        // read current position
-        static uint16_t s = 0;
-        if (!(s % 100))
-        {
-            for (int i = 0; i < NUM_SLAVES; i++)
-            printf("pos%d: %x", i, EC_READ_U32(domain_pd_ + pdo_offsets_[i].position_actual_value));
-        }
-
-        sendProcessData();
-
-        // sync every cycle
-        clock_gettime(CLOCK_TO_USE, &time);
-        ecrt_master_sync_reference_clock_to(master_, TIMESPEC2NS(time));
-        ecrt_master_sync_slave_clocks(master_);
-
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &wakeup_time, NULL);
-    }
-}
-#endif
-
 
 void EtherCATInterface::runTask()
 {

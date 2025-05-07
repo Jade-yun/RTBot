@@ -7,4 +7,4 @@ include_directories(${CMAKE_SOURCE_DIR}/third_party/include/readerwriterqueue/)
 file(GLOB_RECURSE sources "src/*.cpp")                   # common library cpp files
 
 # Library
-add_library(robot_utility SHARED ${sources})       # produce a library used by sim/robot
+add_library(robot_utility STATIC ${sources})       # produce a library used by sim/robot
