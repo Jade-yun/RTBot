@@ -247,6 +247,7 @@ public:
     }
 };
 
+#if 0
 template <class T>
 class DoubleBuffer
 {
@@ -276,8 +277,37 @@ public:
 
         uint32_t idx = (w - 1) % 2;
         s = buffer[idx];
-        read_flag.store(w, std::memory_order_relaxed);
+//        read_flag.store(w, std::memory_order_relaxed);
+        read_flag.fetch_add(1, std::memory_order_release);
         return true;
+    }
+};
+#endif
+
+template <typename T>
+class DoubleBuffer {
+    std::array<T, 2> buffer;
+    std::atomic<uint32_t> version{0}; // 偶数：稳定，奇数：写入中
+
+public:
+    void write(const T& data) {
+        uint32_t v = version.load(std::memory_order_relaxed);
+        version.store(v + 1, std::memory_order_release);
+        buffer[(v / 2) % 2] = data;
+        version.store(v + 2, std::memory_order_release);
+    }
+
+    bool read(T& data) const {
+        T result;
+        while (true) {
+            uint32_t v1 = version.load(std::memory_order_acquire);
+            if (v1 & 1) continue; // 写入中，重试
+
+            data = buffer[(v1 / 2) % 2];
+
+            uint32_t v2 = version.load(std::memory_order_acquire);
+            if (v1 == v2) return true;
+        }
     }
 };
 

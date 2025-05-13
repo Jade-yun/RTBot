@@ -16,6 +16,12 @@ int main() {
 
     while (true) 
     {
+        if (shm().state_buffer.read(state))
+        {
+            // 
+            std::cout << "Recv new State...\n";
+        }
+
         std::cout << "=== Robot Command Line Interface ===\n";
         std::cout << "Use >x,x,x,x,x,x,speed for MoveJ\n";
         std::cout << "Use @x,x,x,x,x,x,speed for MoveL\n";
@@ -73,12 +79,6 @@ int main() {
         if (shm().cmd_queue.push(cmd))
         {
             std::cout << "Sent new command...\n";
-        }
-
-        if (shm().state_buffer.read(state))
-        {
-            // 
-            std::cout << "Recv new State...\n";
         }
 
     }

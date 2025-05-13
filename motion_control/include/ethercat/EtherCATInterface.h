@@ -50,18 +50,6 @@ public:
     bool init();     // 初始化总线
     void runTask();
 
-    // --- 控制接口 ---
-    void sendCSPCommand(int slave_id, int32_t position_target);
-    void sendCSTCommand(int slave_id, int16_t torque_target);
-    void sendCSVCommand(int slave_id, int32_t velocity_target);
-
-    // --- 状态读取接口 ---
-    void readStatus(int slave_id, StatusData& data);
-
-    // --- 状态检查 ---
-    // bool checkMasterState();
-    // bool checkDomainState();
-    // bool checkSlaveState(int slave_id);
 public:
     uint8_t motor_start_flag = 0;
 
@@ -88,12 +76,8 @@ private:
     ec_master_state_t master_state = {};
 
     ec_slave_config_t *slave_config[2];
-    ec_slave_config_state_t sc_state[2] = {};;
+    ec_slave_config_state_t sc_state[2] = {};
 
-    std::vector<ec_slave_config_t*> slave_configs_;
-
-    // PDO 偏移量
-    std::vector<PDOOffsets> pdo_offsets_;
 };
 
 #endif // ETHERCAT_INTERFACE_H

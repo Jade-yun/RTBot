@@ -10,7 +10,9 @@ CONFIG += c++17
 # deprecated API in order to know how to port your code away from it.
 DEFINES += QT_DEPRECATED_WARNINGS
 
-INCLUDEPATH += $$PWD/../../shared/include/
+INCLUDEPATH += $$PWD/../../common/include/
+
+LIBS += -lrt
 
 # You can also make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
@@ -31,17 +33,3 @@ FORMS += \
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
-
-
-win32:CONFIG(release, debug|release): LIBS += -L$$PWD/../../install/lib/release/ -lshared_memory
-else:win32:CONFIG(debug, debug|release): LIBS += -L$$PWD/../../install/lib/debug/ -lshared_memory
-else:unix: LIBS += -L$$PWD/../../install/lib/ -lshared_memory
-
-INCLUDEPATH += $$PWD/../../install
-DEPENDPATH += $$PWD/../../install
-
-win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$PWD/../../install/lib/release/libshared_memory.a
-else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$PWD/../../install/lib/debug/libshared_memory.a
-else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$PWD/../../install/lib/release/shared_memory.lib
-else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$PWD/../../install/lib/debug/shared_memory.lib
-else:unix: PRE_TARGETDEPS += $$PWD/../../install/lib/libshared_memory.a

@@ -11,6 +11,7 @@
 #include "Utilities/SharedMemoryManager.h"
 #include "Parameters/SharedDataType.h"
 #include "Robot.h"
+#include "CommandHandler.h"
 
 
 void delay_nanoseconds(long nanoseconds) {
@@ -59,26 +60,26 @@ int main()
 
     PeriodicTaskManager taskManager;
 
-    EtherCATInterface ethercatIf;
+//    EtherCATInterface ethercatIf;
 
-    int ret = ethercatIf.init();
-    if (!ret)
-    {
-        printf("Failed to init EtherCAT master.\n");
-        exit(-2);
-    }
+//    int ret = ethercatIf.init();
+//    if (!ret)
+//    {
+//        printf("Failed to init EtherCAT master.\n");
+//        exit(-2);
+//    }
 
-    PeriodicMemberFunction<EtherCATInterface> ecatTask(
-        &taskManager, .001, "ecat", &EtherCATInterface::runTask, &ethercatIf);
+//    PeriodicMemberFunction<EtherCATInterface> ecatTask(
+//        &taskManager, .001, "ecat", &EtherCATInterface::runTask, &ethercatIf);
 
-    ecatTask.start();
-    ecatTask.setThreadPriority(95);
+//    ecatTask.start();
+//    ecatTask.setThreadPriority(95);
 
     Robot robot;
     robot.init();
 
     PeriodicMemberFunction<Robot> robotTask(
-        &taskManager, 0.0005, "robot", &Robot::controlLoop, &robot);
+        &taskManager, 0.001, "robot", &Robot::controlLoop, &robot);
 
     robotTask.start();
     robotTask.setThreadPriority(95);
@@ -89,8 +90,6 @@ int main()
         // taskManager.printStatus();
         // taskManager.printStatusOfSlowTasks();
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(100 * 1000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10 * 1000));
     }
-
-    //signal(SIGINT, signal_handler);
 }

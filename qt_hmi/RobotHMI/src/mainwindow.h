@@ -3,8 +3,6 @@
 
 #include <QMainWindow>
 
-#include "SharedMemoryManager.h"
-
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
@@ -28,8 +26,8 @@ private slots:
 
 private:
     Ui::MainWindow *ui;
+
+    QTimer* timer;
  
-private:
-    SharedData* data;
 };
 #endif // MAINWINDOW_H

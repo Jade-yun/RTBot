@@ -148,7 +148,7 @@ ec_sync_info_t slave_syncs[] = {
 EtherCATInterface::EtherCATInterface()
     : running_(false), master_(nullptr), domain_(nullptr), domain_pd_(nullptr)
 {
-    pdo_offsets_.resize(NUM_SLAVES);
+
 }
 
 EtherCATInterface::~EtherCATInterface()
@@ -156,14 +156,8 @@ EtherCATInterface::~EtherCATInterface()
 
 }
 
-
-
-#if USE_PERIODICTASK_
-void EtherCATInterface::init()
-#else
 bool EtherCATInterface::init()
 {
-#endif    
     master_ = ecrt_request_master(0);
     if (!master_)
     {
@@ -196,51 +190,6 @@ bool EtherCATInterface::init()
             return false;
         }
     }
-
-    // printf("Configuring PDOs...\n");
-    // if (ecrt_domain_reg_pdo_entry_list(domain_, domain_regs))
-    // {
-    //     fprintf(stderr, "pdo入口注册失败\n");
-    //     return -1;
-    // }
-
-    //     // slave_configs_.push_back(sc);
-
-    //     // ecrt_slave_config_sdo8(sc, 0x6060, 0x00, 8); // Mode of operation: 8 (CSP), 10 (CST)
-
-    //     // Enable DC Synchronization
-    //     // ecrt_slave_config_dc(sc, 0x0300, CYCLE_TIME_NS, 4 * CYCLE_TIME_NS + 400 * 1000, 0, 0);
-    // for(int i = 0; i < NUM_SLAVES; i++)
-    // {
-    //     ecrt_slave_config_dc(slave_config[i], 0x0300, CYCLE_TIME_NS, CYCLE_TIME_NS / 2, 0, 0);
-    // }
-
-    // 配置同步管理器等
-    // TO DO 
-
-    // std::vector<ec_pdo_entry_reg_t> regs;
-
-    // for (uint16_t i = 0; i < NUM_SLAVES; ++i)
-    // {
-    //     if(i == 0) {
-    //         regs.push_back({0, i, VENDOR_ID, 0x005e0402, 0x6040, 0x00, &pdo_offsets_[i].control_word, nullptr});
-    //         regs.push_back({0, i, VENDOR_ID, 0x005e0402, 0x6041, 0x00, &pdo_offsets_[i].status_word, nullptr});
-    //         regs.push_back({0, i, VENDOR_ID, 0x005e0402, 0x607A, 0x00, &pdo_offsets_[i].target_position, nullptr});
-    //         regs.push_back({0, i, VENDOR_ID, 0x005e0402, 0x6064, 0x00, &pdo_offsets_[i].position_actual_value, nullptr});
-    //         regs.push_back({0, i, VENDOR_ID, 0x005e0402, 0x6060, 0x00, &pdo_offsets_[i].control_mode, nullptr});
-    //         regs.push_back({0, i, VENDOR_ID, 0x005e0402, 0x6061, 0x00, &pdo_offsets_[i].control_mode_display, nullptr});
-    //         regs.push_back({0, i, VENDOR_ID, 0x005e0402, 0x606C, 0x00, &pdo_offsets_[i].velocity_actual_value, nullptr});
-    //     }
-    //     else {
-    //         regs.push_back({0, i, VENDOR_ID, PRODUCT_ID, 0x6040, 0x00, &pdo_offsets_[i].control_word, nullptr});
-    //         regs.push_back({0, i, VENDOR_ID, PRODUCT_ID, 0x6041, 0x00, &pdo_offsets_[i].status_word, nullptr});
-    //         regs.push_back({0, i, VENDOR_ID, PRODUCT_ID, 0x607A, 0x00, &pdo_offsets_[i].target_position, nullptr});
-    //         regs.push_back({0, i, VENDOR_ID, PRODUCT_ID, 0x6064, 0x00, &pdo_offsets_[i].position_actual_value, nullptr});
-    //         regs.push_back({0, i, VENDOR_ID, PRODUCT_ID, 0x6060, 0x00, &pdo_offsets_[i].control_mode, nullptr});
-    //         regs.push_back({0, i, VENDOR_ID, PRODUCT_ID, 0x6061, 0x00, &pdo_offsets_[i].control_mode_display, nullptr});
-    //         regs.push_back({0, i, VENDOR_ID, PRODUCT_ID, 0x606C, 0x00, &pdo_offsets_[i].velocity_actual_value, nullptr});
-    //     }
-    // }
 
     printf("Configuring PDOs...\n");
     if (ecrt_domain_reg_pdo_entry_list(domain_, domain_regs))
@@ -490,70 +439,3 @@ cia402_state_t EtherCATInterface::get_axis_state(uint16_t status_word)
     else
         return no_ready_to_switch_on;
 }
-
-// --- 控制指令发送 ---
-void EtherCATInterface::sendCSPCommand(int slave_id, int32_t position_target)
-{
-    if (slave_id < 0 || slave_id >= NUM_SLAVES)
-        return;
-    int offset = pdo_offsets_[slave_id].target_position;
-    EC_WRITE_S32(domain_pd_ + offset, position_target);
-}
-
-void EtherCATInterface::sendCSTCommand(int slave_id, int16_t torque_target)
-{
-    if (slave_id < 0 || slave_id >= NUM_SLAVES)
-        return;
-    int offset = pdo_offsets_[slave_id].target_torque;
-    EC_WRITE_S16(domain_pd_ + offset, torque_target);
-}
-
-void EtherCATInterface::sendCSVCommand(int slave_id, int32_t velocity_target)
-{
-    if (slave_id < 0 || slave_id >= NUM_SLAVES)
-        return;
-    int offset = pdo_offsets_[slave_id].target_velocity;
-    EC_WRITE_S32(domain_pd_ + offset, velocity_target);
-}
-
-// --- 状态读取 ---
-void EtherCATInterface::readStatus(int slave_id, StatusData &data)
-{
-    if (slave_id < 0 || slave_id >= NUM_SLAVES)
-        return;
-
-    data.position_actual = EC_READ_S32(domain_pd_ + pdo_offsets_[slave_id].position_actual_value);
-    data.velocity_actual = EC_READ_S32(domain_pd_ + pdo_offsets_[slave_id].velocity_actual_value);
-    data.torque_actual = EC_READ_S16(domain_pd_ + pdo_offsets_[slave_id].torque_actual_value);
-    data.status_word = EC_READ_U16(domain_pd_ + pdo_offsets_[slave_id].status_word);
-}
-
-#if 0
-// --- 状态检查 ---
-bool EtherCATInterface::checkMasterState()
-{
-    ec_master_state_t master_state;
-    ecrt_master_state(master_, &master_state);
-    return (master_state.slaves_responding == NUM_SLAVES);
-}
-
-bool EtherCATInterface::checkDomainState()
-{
-    static ec_domain_state_t domain_state_last;
-
-    ec_domain_state_t domain_state;
-    ecrt_domain_state(domain_, &domain_state);
-    return (domain_state.working_counter != domain_state_last.working_counter);
-    domain_state_last = domain_state;
-}
-
-bool EtherCATInterface::checkSlaveState(int slave_id)
-{
-    if (slave_id < 0 || slave_id >= NUM_SLAVES)
-        return false;
-
-    ec_slave_config_state_t sc_state;
-    ecrt_slave_config_state(slave_configs_[slave_id], &sc_state);
-    return (sc_state.al_state == 0x08); // OPERATIONAL
-}
-#endif

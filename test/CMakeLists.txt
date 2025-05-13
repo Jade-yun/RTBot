@@ -17,3 +17,14 @@ target_include_directories(test PRIVATE
 
 # 链接库
 target_link_libraries(test PRIVATE pthread robot_utility rt)
+
+if(QNX)
+    set(TARGET_INSTALL_PATH "/tmp/${PROJECT_NAME}/bin")
+elseif(UNIX AND NOT ANDROID)
+    set(TARGET_INSTALL_PATH "/opt/${PROJECT_NAME}/bin")
+endif()
+
+# 检查是否设置了目标路径，并添加安装规则
+if(TARGET_INSTALL_PATH)
+    install(TARGETS test DESTINATION ${TARGET_INSTALL_PATH})
+endif()

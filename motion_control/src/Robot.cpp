@@ -13,12 +13,25 @@ void Robot::init()
 void Robot::setEnable(bool _enabled)
 {
     // motorJ[ALL]->SetEnable(_enable);
+    // 控制器使能
+//    ctrl->setEnable(_enabled);
     enabled = _enabled;
 }
 
 bool Robot::isEnabled() const
 {
     return enabled;
+}
+
+bool Robot::isMoving()
+{
+    // 需要判断电机状态
+
+//    for (int i = 0; i < NUM_JOINTS; i++)
+//    {
+//        return;
+//    }
+    return false;
 }
 
 void Robot::emergecyStop()
@@ -33,46 +46,57 @@ void Robot::emergecyStop()
 
 void Robot::planMoveJ(const std::array<float, NUM_JOINTS> &_joint_pos)
 {
-    // //
-    LowLevelCommand montor_cmd;
+    constexpr int NUM_STEPS = 100; // 插补步数，按路径长或速度自适应计算
+    std::array<float, NUM_JOINTS> start_pos;
 
-    // // 入队列
-    // while (!GlobalParams::joint_commands.try_enqueue(montor_cmd))
-    // {
-    //     // std::this_thread::yield();
-    //     std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    // }
-    while (1)
+    // 获取当前位置
+//    getCurrentJointPosition();
+    start_pos = m_curJoints;
+
+    // 计算每一步的增量
+    std::array<float, NUM_JOINTS> delta;
+    for (int i = 0; i < NUM_JOINTS; ++i)
     {
-        // 插补运算
-        float points[6];
-        // montor_cmd.joint_pos
-
-        // 发送插补后的点
-        
-        while (!GlobalParams::joint_commands.try_enqueue(montor_cmd))
-        {
-            std::this_thread::yield();
-            // std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        }
-
-        // 是否插补完成
-        // if ()
-        // break;
-
+        delta[i] = (_joint_pos[i] - start_pos[i]) / NUM_STEPS;
     }
 
-    // 插补计算
+    LowLevelCommand montor_cmd = {
+        .mode = CSP,
+    };
+    for (int step = 1; step <= NUM_STEPS; ++step)
+    {
+        // 生成当前插补点
+        for (int j = 0; j < NUM_JOINTS; ++j)
+        {
+            montor_cmd.joint_pos[j] = start_pos[j] + delta[j] * step;
+        }
 
-    // moveJ()
+        while (!GlobalParams::joint_commands.try_enqueue(montor_cmd))
+        {
+//            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    // 发送最后一点确保精确到达
+    for (int j = 0; j < NUM_JOINTS; ++j)
+    {
+        montor_cmd.joint_pos[j] = _joint_pos[j];
+    }
+    while (!GlobalParams::joint_commands.try_enqueue(montor_cmd))
+    {
+        std::this_thread::yield();
+    }
 }
+
 
 void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos)
 {
     //
     // float temp[NUM_JOINTS] = joint_pos;
     LowLevelCommand montor_cmd = {
-        .mode = CSP};
+        .mode = CSP
+    };
 
     std::copy(_joint_pos.begin(), _joint_pos.end(), montor_cmd.joint_pos);
 
@@ -84,15 +108,45 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos)
     }
 }
 
+
+
 void Robot::moveL(std::array<float, NUM_JOINTS> _pose)
 {
     // 运动学逆解
-
+//    solveIK
     //
     std::array<float, NUM_JOINTS> pos = {
 
     };
     moveJ(pos);
+}
+
+void Robot::setSpeed(float _speed)
+{
+    if (_speed < 0) _speed = 0;
+//    else if (_speed > 200) _speed = 200;
+
+    m_jointSpeed = _speed * m_jointSpeedRatio;
+}
+
+void Robot::updatePose()
+{
+    //
+    //    solveFK(m_curJoints, m_currentPose);
+}
+
+void Robot::updateJointStates()
+{
+    // 从ethercat读取电机位置信息之后, 调用更新
+//    m_curJoints =
+    RobotState state;
+    shm().state_buffer.read(state);
+
+    // 更新当前关节位置
+    for (int i = 0; i < NUM_JOINTS; ++i) {
+        m_curJoints[i] = state.joint_state[i].position;
+    }
+
 }
 
 void Robot::controlLoop()
@@ -143,6 +197,19 @@ void Robot::controlLoop()
         // }
         // std::cout << "\n";
         break;
+    }
+    case HighLevelCommandType::MoveP:
+    {
+        int traj_index = cmd.movep_params.traj_index;
+        const auto &traj = shm().trajectory_pool[traj_index];
+
+        for (uint32_t i = 0; i < traj.point_count; i++)
+        {
+            std::array<float, NUM_JOINTS> pos;
+            std::memcpy(pos.data(), traj.points[i].joint_pos, sizeof(float) * NUM_JOINTS);
+            moveJ(pos);
+        }
+
     }
     default:
         break;

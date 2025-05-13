@@ -1,10 +1,14 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
-#include "SharedMemoryManager.h"
-
+#include "Utilities/SharedMemoryManager.h"
+#include "Parameters/SharedDataType.h"
 #include <QTimer>
 #include <QDebug>
+
+SharedMemoryManager<SharedMemoryData> shm(SharedMemoryManager<SharedMemoryData>::Attacher);
+
+int pos_times = 1;
 
 //void updateCommand(int runFlag) {
 //    SharedMemoryManager& manager = SharedMemoryManager::getInstance();
@@ -35,19 +39,25 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
-    SharedMemoryManager& shmManager = SharedMemoryManager::getInstance();
-    if (!shmManager.init(ShmMode::Attacher)) {
-        qWarning() << "Failed to attach to shared memory.";
-    }
-    // 读取共享内存数据，如刷新 UI
-    data = shmManager.getData();
+    timer = new QTimer(this);
+    timer->start(1*1000);
 
-    QTimer* timer = new QTimer(this);
-    timer->start(1 * 1000);
+    connect(timer, &QTimer::timeout, this, [=](){
 
-//    connect(timer, &QTimer::timeout, this, [=](){
-//        qDebug() << data->state.heartbeat_counter;
-//    });
+        HighLevelCommand cmd;
+        cmd.command_type = HighLevelCommandType::MoveJ;
+        for (int i = 0; i < NUM_JOINTS; i++)
+        {
+           cmd.movej_params.target_joint_pos[i] = i * pos_times;
+        }
+        pos_times++;
+
+        if (shm().cmd_queue.push(cmd))
+        {
+
+        }
+    });
+//    shm().cmd_queue.push()
 }
 
 MainWindow::~MainWindow()
@@ -68,9 +78,13 @@ void MainWindow::on_spinBoxVelocity_valueChanged(int arg1)
 void MainWindow::on_btnStart_clicked()
 {
 //    data->command.mode = ControlMode::MOVE_JOINT;
+       timer->start(1 * 1000);
+
 }
 
 void MainWindow::on_btnStop_clicked()
 {
 //    data->command.mode = ControlMode::STOP;
+       timer->stop();
+
 }
