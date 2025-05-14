@@ -6,6 +6,8 @@
 #include "Utilities/SharedMemoryManager.h"
 #include "CommandHandler.h"
 
+#define PI (3.1415926)
+
 class Robot
 {
 public:
@@ -17,7 +19,7 @@ public:
     void emergecyStop();
 
     // 
-    void planMoveJ(const std::array<float, NUM_JOINTS>& _joint_pos);
+    void planMoveJ(const std::array<float, NUM_JOINTS>& _joint_pos, float _arg_vel);
     void moveJ(const std::array<float, NUM_JOINTS>& _joint_pos);
     void moveL(std::array<float, NUM_JOINTS> _pose);
 

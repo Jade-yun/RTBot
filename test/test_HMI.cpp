@@ -47,14 +47,18 @@ int main() {
 
             argNum = sscanf(cmd_str.c_str(), ">%f,%f,%f,%f,%f,%f,%f", joints, joints + 1, joints + 2,
                             joints + 3, joints + 4, joints + 5, &speed);
+
+            //printf("joint1:%f, joint2:%f, joint3:%f, joint4:%f, joint5:%f, joint6:%f, speed:%f\n", joints[0], joints[1], joints[2], joints[3], joints[4], joints[5], speed);
             
             if (argNum < 6) continue;
 
+            //指令类型
             index++;
             cmd.command_type = HighLevelCommandType::MoveJ;
             cmd.command_index = index;
 
             ::memcpy(cmd.movej_params.target_joint_pos, joints, sizeof(float) * NUM_JOINTS); 
+            cmd.movel_params.velocity = speed; 
         } 
         else if (cmd_str[0] == '@')
         {
@@ -70,7 +74,7 @@ int main() {
             cmd.command_type = HighLevelCommandType::MoveL; 
             cmd.command_index = index;
 
-            ::memcpy(cmd.movel_params.target_pose, pose, sizeof(float) * NUM_JOINTS);          
+            ::memcpy(cmd.movel_params.target_pose, pose, sizeof(float) * NUM_JOINTS);         
         }
         else {
             continue;

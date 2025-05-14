@@ -4,12 +4,14 @@
 #include <unistd.h>        // sleep
 #include <string.h>        // memset
 #include <etherlab/ecrt.h> // IGH EtherCAT 主站API
+#include <signal.h>
 #include "ethercat/EtherCATInterface.h"
 
 #include "Utilities/SharedMemoryManager.h"
 #include "Parameters/SharedDataType.h"
+#include "Parameters/GlobalParameters.h"
 
-#define CYCLE_TIME_NS (1000000) // 1ms
+#define CYCLE_TIME_NS (10000000) // 1ms
 #define NSEC_PER_SEC (1000000000L)
 
 #define VENDOR_ID (0x000116C7)
@@ -43,20 +45,6 @@ struct PdoEntryInfo
     uint8_t subindex;
     size_t offset_in_struct;
 };
-
-// // 统一表（你以后加成员，只要加一行就好）
-// static constexpr PdoEntryInfo pdo_entry_info_table[] = {
-//     {0x6040, 0x00, offsetof(PDOOffsets, control_word)},
-//     {0x6041, 0x00, offsetof(PDOOffsets, status_word)},
-//     {0x607A, 0x00, offsetof(PDOOffsets, target_position)},
-//     {0x6064, 0x00, offsetof(PDOOffsets, position_actual_value)},
-//     {0x6060, 0x00, offsetof(PDOOffsets, control_mode)},
-//     {0x6061, 0x00, offsetof(PDOOffsets, control_mode_display)},
-//     {0x60FF, 0x00, offsetof(PDOOffsets, target_velocity)},
-//     {0x606C, 0x00, offsetof(PDOOffsets, velocity_actual_value)},
-//     {0x6071, 0x00, offsetof(PDOOffsets, target_torque)},
-//     {0x6077, 0x00, offsetof(PDOOffsets, torque_actual_value)},
-// };
 
 /*Offsets for PDO entries*/
 static struct{
@@ -144,6 +132,7 @@ ec_sync_info_t slave_syncs[] = {
     
 
     // SharedMemoryManager<SharedMemoryData>  shm = SharedMemoryManager<SharedMemoryData>(SharedMemoryManager<SharedMemoryData>::Attacher, true);
+extern SharedMemoryManager<SharedMemoryData> shm;
 
 EtherCATInterface::EtherCATInterface()
     : running_(false), master_(nullptr), domain_(nullptr), domain_pd_(nullptr)
@@ -156,8 +145,41 @@ EtherCATInterface::~EtherCATInterface()
 
 }
 
+// 信号处理函数
+void EtherCATInterface::signal_handler() {
+        //deal ethercat signal
+        ecrt_master_receive(master_);
+        ecrt_domain_process(domain_);
+        check_domain_state();
+        //Check for master state
+        check_master_state();
+        //Check for slave configuration state(s)
+        for(int i = 0; i < NUM_SLAVES; i++)
+        {
+            check_slave_config_states(slave_config[i], i);
+        }
+
+        for(int i = 0; i < NUM_SLAVES; i++) {
+            //stop motor
+            EC_WRITE_S32(domain_pd_ + offset.Target_velocity[i], 0);
+            //disable motor
+            EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0);
+            //change not mode
+            EC_WRITE_S8(domain_pd_ + offset.Control_Mode[i], 0);
+        }
+
+        //stop deal
+        ecrt_domain_queue(domain_);
+        ecrt_master_send(master_);
+
+        //exit handle
+        munlockall();
+        exit(0);
+}
+
+
 bool EtherCATInterface::init()
-{
+{  
     master_ = ecrt_request_master(0);
     if (!master_)
     {
@@ -200,24 +222,8 @@ bool EtherCATInterface::init()
 
     for(int i = 0; i < NUM_SLAVES; i++)
     {
-        ecrt_slave_config_dc(slave_config[i], 0x0300, CYCLE_TIME_NS, 10000, 0, 0);
+        ecrt_slave_config_dc(slave_config[i], 0x0300, CYCLE_TIME_NS, 0, 0, 0);
     }
-
-    // for (uint16_t i = 0; i < NUM_SLAVES; ++i)
-    // {
-    //     for (const auto &entry : pdo_entry_info_table)
-    //     {
-    //         regs.push_back(ec_pdo_entry_reg_t{
-    //             0, i, VENDOR_ID, PRODUCT_ID,
-    //             entry.index,
-    //             entry.subindex,
-    //             reinterpret_cast<unsigned int *>(
-    //                 reinterpret_cast<uint8_t *>(&pdo_offsets_[i]) + entry.offset_in_struct),
-    //             nullptr});
-    //     }
-    // }
-    // 最后一项必须是全 0 结构体，表示结束
-    // regs.push_back(ec_pdo_entry_reg_t{});
 
     if (ecrt_master_activate(master_))
     {
@@ -238,6 +244,17 @@ bool EtherCATInterface::init()
 void EtherCATInterface::runTask()
 {
     static uint16_t cycle_counter = 0;
+    std::array<signed int, 4> pos{0};
+
+
+    LowLevelCommand montor_cmd;
+    if (GlobalParams::joint_commands.try_dequeue(montor_cmd))
+    {
+        for(int i = 0; i < 4; i++) {
+            pos[i] = montor_cmd.joint_pos[i];
+        }
+        printf("Joint1_pos: %x\n", pos[0]);
+    }
 
     // 更新和发送过程数据
     updateProcessData();
@@ -269,17 +286,25 @@ void EtherCATInterface::runTask()
         state_value[i] = EC_READ_U16(domain_pd_ + offset.Status_Word[i]); // 读取电机状态字
     }
 
-    printf("statue: %d\n", state_value[1]);
+    //printf("statue: %d\n", state_value[1]);
 
     cia402_state_t servo_state[NUM_SLAVES];
 
     bool all_switched_on = true;
+
+    // 电机当前位置的脉冲值
+    std::array<int32_t, NUM_SLAVES> pos_pulse_cnt;
     for (int16_t i = 0; i < NUM_SLAVES; i++)
     {
         servo_state[i] = get_axis_state(state_value[i]);
         all_switched_on = all_switched_on && (servo_state[i] == switched_on);
+        
+        pos_pulse_cnt[i] = EC_READ_S32(domain_pd_ + offset.Position_Actual_Value[i]);
     }
 
+    unsigned int Cur_pos = EC_READ_S32(domain_pd_ + offset.Position_Actual_Value[0]);
+    printf("Cur_pos: %d\n", Cur_pos);
+    
     // enable motor
     if (motor_start_flag == 1)
     {
@@ -304,8 +329,8 @@ void EtherCATInterface::runTask()
 
             case (operation_enable):
             {
-                auto value = (EC_READ_S32(domain_pd_ + offset.Position_Actual_Value[i]) + 0);
-                EC_WRITE_U32(domain_pd_ + offset.Target_Position[i], value);
+                auto value = (EC_READ_S32(domain_pd_ + offset.Position_Actual_Value[i]));
+                EC_WRITE_U32(domain_pd_ + offset.Target_Position[i], value + pos[i]);
                 break;
             }
             case (quick_stop_active):
@@ -349,7 +374,20 @@ void EtherCATInterface::runTask()
 
     sendProcessData();
 
-    // clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &wakeup_time, NULL);
+    // 传递电机状态 以供其他模块使用
+    RobotState cur_state;
+    for (int i = 0; i < NUM_SLAVES; i++)
+    {
+
+        // 脉冲 -> 角度
+        float pos; 
+        // pos = pos_pulse_cnt * radio * PI / 360.0f;
+        cur_state.joint_state[i].position = pos;
+    }
+
+    shm().state_buffer.write(cur_state);
+
+    //clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &wakeup_time, NULL);
 }
 
 

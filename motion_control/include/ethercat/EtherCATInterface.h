@@ -50,6 +50,7 @@ public:
     bool init();     // 初始化总线
     void runTask();
 
+    void signal_handler();
 public:
     uint8_t motor_start_flag = 0;
 
@@ -76,7 +77,7 @@ private:
     ec_master_state_t master_state = {};
 
     ec_slave_config_t *slave_config[2];
-    ec_slave_config_state_t sc_state[2] = {};
+    ec_slave_config_state_t sc_state[2] = {};;
 
 };
 

@@ -13,6 +13,7 @@
 #include "Robot.h"
 #include "CommandHandler.h"
 
+EtherCATInterface ethercatIf;
 
 void delay_nanoseconds(long nanoseconds) {
     struct timespec req, rem;
@@ -51,6 +52,15 @@ void monitorEStop()
     // }
 }
 
+// 信号处理函数
+void signal_handler(int signum) {
+    if (signum == SIGINT) {
+        printf("接收到 Ctrl+C 信号，正在退出程序...\n");
+
+        ethercatIf.signal_handler();
+    }
+}
+
 
 SharedMemoryManager<SharedMemoryData> shm =
     SharedMemoryManager<SharedMemoryData>(SharedMemoryManager<SharedMemoryData>::Creator, true);
@@ -60,20 +70,28 @@ int main()
 
     PeriodicTaskManager taskManager;
 
-//    EtherCATInterface ethercatIf;
+    int ret = ethercatIf.init();
+    if (!ret)
+    {
+        printf("Failed to init EtherCAT master.\n");
+        exit(-2);
+    }
 
-//    int ret = ethercatIf.init();
-//    if (!ret)
-//    {
-//        printf("Failed to init EtherCAT master.\n");
-//        exit(-2);
-//    }
+    // auto sig_handler = [&](int signum) {
+    //     if (signum == SIGINT) {
+    //         printf("接收到 Ctrl+C 信号，正在退出程序...\n");
+    
+    //         ethercatIf.signal_handler();
+    //     }
+    // };
 
-//    PeriodicMemberFunction<EtherCATInterface> ecatTask(
-//        &taskManager, .001, "ecat", &EtherCATInterface::runTask, &ethercatIf);
+    signal(SIGINT, signal_handler);
 
-//    ecatTask.start();
-//    ecatTask.setThreadPriority(95);
+   PeriodicMemberFunction<EtherCATInterface> ecatTask(
+       &taskManager, .01, "ecat", &EtherCATInterface::runTask, &ethercatIf);
+
+   ecatTask.start();
+   ecatTask.setThreadPriority(95);
 
     Robot robot;
     robot.init();

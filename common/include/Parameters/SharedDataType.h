@@ -165,9 +165,9 @@ struct LowLevelCommand {
     MotorMode mode;
     union 
     {
-        float joint_pos[NUM_JOINTS];  // 每个关节的目标位置
-        float joint_velocity[NUM_JOINTS]; // 每个关节的目标速度
-        float joint_torque[NUM_JOINTS]; // 每个关节的目标力矩
+        signed int joint_pos[NUM_JOINTS];  // 每个关节的目标位置
+        signed int joint_velocity[NUM_JOINTS]; // 每个关节的目标速度
+        signed int joint_torque[NUM_JOINTS]; // 每个关节的目标力矩
     };
 };
 

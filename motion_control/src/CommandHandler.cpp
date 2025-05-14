@@ -33,7 +33,7 @@ void CommandHandler::parseCommand(HighLevelCommand &_cmd)
             pos[i] = _cmd.movej_params.target_joint_pos[i];
         }
         // 初始时
-        context->planMoveJ(context->m_targetJoints);
+        // context->planMoveJ(context->m_targetJoints);
 
         while (context->isMoving() && context->isEnabled())
         {
