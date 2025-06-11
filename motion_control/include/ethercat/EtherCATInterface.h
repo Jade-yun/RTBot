@@ -8,7 +8,7 @@
 #include <string>
 #include <thread>
 
-#include "ethercat/config_hcfa.h" 
+#include "ethercat/config_hcfa.h"
 
 struct StatusData {
     int32_t position_actual;
@@ -77,7 +77,12 @@ private:
     ec_master_state_t master_state = {};
 
     ec_slave_config_t *slave_config[2];
-    ec_slave_config_state_t sc_state[2] = {};;
+    ec_slave_config_state_t sc_state[2] = {};
+
+private:
+    // 需要设置的参数
+    // 电机减速比
+//    float radio = 95.87;
 
 };
 

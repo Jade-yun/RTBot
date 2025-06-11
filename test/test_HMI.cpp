@@ -1,6 +1,7 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <cmath>
 
 #include "Utilities/SharedMemoryManager.h"
 #include "Parameters/SharedDataType.h"
@@ -52,13 +53,19 @@ int main() {
             
             if (argNum < 6) continue;
 
+            // 转换为弧度
+            for (int i = 0; i < 6; i++)
+            {
+                joints[i] *= M_PI / 180;
+            }
+
             //指令类型
             index++;
             cmd.command_type = HighLevelCommandType::MoveJ;
             cmd.command_index = index;
 
             ::memcpy(cmd.movej_params.target_joint_pos, joints, sizeof(float) * NUM_JOINTS); 
-            cmd.movel_params.velocity = speed; 
+            cmd.movej_params.velocity = speed;
         } 
         else if (cmd_str[0] == '@')
         {
@@ -70,11 +77,18 @@ int main() {
 
             if (argNum < 6) continue;
 
+
+            for (int i = 4; i < 6; i++)
+            {
+                pose[i] *= M_PI / 180;
+            }
+
             index++;
             cmd.command_type = HighLevelCommandType::MoveL; 
             cmd.command_index = index;
 
-            ::memcpy(cmd.movel_params.target_pose, pose, sizeof(float) * NUM_JOINTS);         
+            ::memcpy(cmd.movel_params.target_pose, pose, sizeof(float) * NUM_JOINTS);
+            cmd.movel_params.velocity = speed;
         }
         else {
             continue;
@@ -83,6 +97,15 @@ int main() {
         if (shm().cmd_queue.push(cmd))
         {
             std::cout << "Sent new command...\n";
+            RobotState state;
+            shm().state_buffer.read(state);
+
+            std::cout << "joints pos: ";
+            for (int i = 0; i < NUM_JOINTS; i++)
+            {
+                std::cout << " " << state.joint_state[i].position;;
+            }
+            std::cout << std::endl;
         }
 
     }

@@ -5,6 +5,7 @@
 #include <string.h>        // memset
 #include <etherlab/ecrt.h> // IGH EtherCAT 主站API
 #include <signal.h>
+#include <math.h>
 #include "ethercat/EtherCATInterface.h"
 
 #include "Utilities/SharedMemoryManager.h"
@@ -36,7 +37,7 @@ uint32_t SlaveVID[NUM_SLAVES] = {0x000116C7, 0x000116C7};
 uint32_t SlavePID[NUM_SLAVES] = {0x005e0402, 0x006b0402};
 // #define PRODUCT_ID 0x005e0402, 0x006b0402, 0x006b0402;
 
-static ec_slave_config_t *sc;
+//static ec_slave_config_t *sc;
 
 // 每个 PDO 对应的信息：index, subindex, PDOOffsets 中的字段偏移
 struct PdoEntryInfo
@@ -253,7 +254,7 @@ void EtherCATInterface::runTask()
         for(int i = 0; i < 4; i++) {
             pos[i] = montor_cmd.joint_pos[i];
         }
-        printf("Joint1_pos: %x\n", pos[0]);
+        printf("Joint_pos: %x %x\n", pos[0], pos[1]);
     }
 
     // 更新和发送过程数据
@@ -302,8 +303,14 @@ void EtherCATInterface::runTask()
         pos_pulse_cnt[i] = EC_READ_S32(domain_pd_ + offset.Position_Actual_Value[i]);
     }
 
-    unsigned int Cur_pos = EC_READ_S32(domain_pd_ + offset.Position_Actual_Value[0]);
-    printf("Cur_pos: %d\n", Cur_pos);
+//    unsigned int Cur_pos = EC_READ_S32(domain_pd_ + offset.Position_Actual_Value[0]);
+//    static uint32_t print_cnt = 0;
+//    if (print_cnt == 10)
+//    {
+//        printf("pos_pulse: %d\n", pos_pulse_cnt[0]);
+//        print_cnt = 0;
+//    }
+//    print_cnt++;
     
     // enable motor
     if (motor_start_flag == 1)
@@ -381,11 +388,14 @@ void EtherCATInterface::runTask()
 
         // 脉冲 -> 角度
         float pos; 
-        // pos = pos_pulse_cnt * radio * PI / 360.0f;
+//        pos = pos_pulse_cnt[i] * robot.m_gearRatio[i] * (M_PI / 360.0f);
+        pos = pos_pulse_cnt[i] * (M_PI / 500000.0);
         cur_state.joint_state[i].position = pos;
     }
 
     shm().state_buffer.write(cur_state);
+
+//    robot->updateJointStates();
 
     //clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &wakeup_time, NULL);
 }

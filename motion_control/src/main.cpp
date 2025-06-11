@@ -14,6 +14,7 @@
 #include "CommandHandler.h"
 
 EtherCATInterface ethercatIf;
+Robot robot;
 
 void delay_nanoseconds(long nanoseconds) {
     struct timespec req, rem;
@@ -91,20 +92,20 @@ int main()
        &taskManager, .01, "ecat", &EtherCATInterface::runTask, &ethercatIf);
 
    ecatTask.start();
-   ecatTask.setThreadPriority(95);
+   ecatTask.setThreadPriority(99);
 
-    Robot robot;
+//    Robot robot;
     robot.init();
 
     PeriodicMemberFunction<Robot> robotTask(
-        &taskManager, 0.001, "robot", &Robot::controlLoop, &robot);
+        &taskManager, 0.01, "robot", &Robot::controlLoop, &robot);
 
     robotTask.start();
-    robotTask.setThreadPriority(95);
+    robotTask.setThreadPriority(80);
 
     for (;;)
     {
-        taskManager.printStatus();
+
         // taskManager.printStatus();
         // taskManager.printStatusOfSlowTasks();
 

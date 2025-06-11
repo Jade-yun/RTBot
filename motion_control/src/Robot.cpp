@@ -6,9 +6,24 @@
 
 extern SharedMemoryManager<SharedMemoryData> shm;
 
+Robot::Robot()
+{
+
+}
+
+Robot::~Robot()
+{
+}
+
 void Robot::init()
 {
     // shm = SharedMemoryManager<SharedMemoryData>(SharedMemoryManager<SharedMemoryData>::Attacher, true);
+
+    for (int i = 0; i < NUM_JOINTS; i++)
+    {
+        m_angleLimitMax[i] = 180;
+        m_angleLimitMin[i] = -180;
+    }
 }
 
 void Robot::setEnable(bool _enabled)
@@ -45,12 +60,11 @@ void Robot::emergecyStop()
     // clearFifo();
 }
 
-void Robot::planMoveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _arg_vel)
+void Robot::planMoveJ(const std::array<float, NUM_JOINTS> &_joint_pos)
 {
     //插补步数，按路径长或速度自适应计算
     double NUM_STEPS = 0;
     double T_num = 0; //插值过程时间参数
-    std::array<float, 4> start_pos;
     std::array<double, 4> Joint_Tar_pos; //求的插值目标位置
     //多项式系数
     std::array<double, 4> Inter_a0;
@@ -90,17 +104,24 @@ void Robot::planMoveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _ar
         Enc_motorbit[i] = 0x1FFFF; //17位编码器
     }
 
+    std::array<float, NUM_JOINTS> start_pos = m_curJoints;
     //默认赋值-实际脉冲数值
+//    for(int i = 0; i < 4; i++) {
+//        Pulse_TotalCounter[i] = 0;
+//        Start_PulseCounter[i] = Pulse_TotalCounter[i];
+//        Axise_LastInterPulse[i] = Pulse_TotalCounter[i];
+//        start_pos[i] = Pulse_TotalCounter[i] * PI / 500000.0;
+//    }
     for(int i = 0; i < 4; i++) {
-        Pulse_TotalCounter[i] = 0;
+        Pulse_TotalCounter[i] = start_pos[i] / M_PI * 500000.0;
         Start_PulseCounter[i] = Pulse_TotalCounter[i];
         Axise_LastInterPulse[i] = Pulse_TotalCounter[i];
-        start_pos[i] = Pulse_TotalCounter[i] * PI / 500000.0;
+//        start_pos[i] = Pulse_TotalCounter[i] * PI / 500000.0;
     }
 
     //求最大关节位移的运行时间
     for(int i = 0; i < 4; i++) {
-        Joint_T_temp = fabs(_joint_pos[i] - start_pos[i]) / _arg_vel;
+        Joint_T_temp = fabs(_joint_pos[i] - start_pos[i]) / m_jointSpeed;
         if(Joint_T_temp > Joint_T_max) {
             Joint_T_max = Joint_T_temp;
         }
@@ -206,21 +227,96 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos)
 
 void Robot::moveL(std::array<float, NUM_JOINTS> _pose)
 {
-    // 运动学逆解
-//    solveIK
-    //
-    std::array<float, NUM_JOINTS> pos = {
+#if NUM_JOINTS == 6
+    Kine6d pose;
+    pose.X = _pose[0];
+    pose.Y = _pose[1];
+    pose.Z = _pose[2];
+    pose.A = _pose[3];
+    pose.B = _pose[4];
+    pose.C = _pose[5];
+    pose.fgR = 0;
 
-    };
-    moveJ(pos);
+    Kine6dSol q_sol;
+
+//    float q_last[6];
+
+//    classic6dofInvKine(&pose, q_last, &q_sol);
+    classic6dofInvKine(&pose, m_curJoints.data(), &q_sol);
+
+        bool valid[8];
+        int validCnt = 0;
+
+        for (int i = 0; i < 8; i++)
+        {
+            valid[i] = true;
+
+            for (int j = 1; j <= 6; j++)
+            {
+                if (q_sol.sol[i][j-1] > m_angleLimitMax[j-1] ||
+                    q_sol.sol[i][j-1] < m_angleLimitMin[j-1])
+                {
+                    valid[i] = false;
+                    continue;
+                }
+            }
+            if (valid[i]) validCnt++;
+        }
+
+        if (validCnt > 0) {
+            // 选择距离当前关节位置最近的解
+            float minDist = std::numeric_limits<float>::max();
+            int bestIndex = -1;
+
+            for (int i = 0; i < 8; i++) {
+                if (!valid[i]) continue;
+
+                float dist = 0.0f;
+                for (int j = 0; j < NUM_JOINTS; j++)
+                {
+                    float d = m_curJoints[j] - q_sol.sol[i][j];
+                    dist += d * d;
+                }
+
+                if (dist < minDist) {
+                    minDist = dist;
+                    bestIndex = i;
+                }
+            }
+
+            if (bestIndex >= 0) {
+                std::array<float, NUM_JOINTS> targetJoints;
+                for (int j = 0; j < NUM_JOINTS; j++)
+                {
+                    targetJoints[j] = q_sol.sol[bestIndex][j];
+                }
+
+                // 加入插值、运动规划等
+
+                for (int j = 0; j < NUM_JOINTS; j++)
+                {
+                    targetJoints[j] = q_sol.sol[bestIndex][j];
+                }
+                fprintf(stderr, "MoveL joint pos: %f %f %f %f %f %f\n",
+                       targetJoints[0], targetJoints[1], targetJoints[2],
+                       targetJoints[3], targetJoints[4], targetJoints[5]);
+
+                planMoveJ(targetJoints);
+            }
+        }
+
+#elif NUM_JOINTS == 4
+
+#endif
+
 }
 
 void Robot::setSpeed(float _speed)
 {
-    if (_speed < 0) _speed = 0;
-//    else if (_speed > 200) _speed = 200;
+    if (_speed < 10) _speed = 10;
+    else if (_speed > 200) _speed = 200;
 
-    m_jointSpeed = _speed * m_jointSpeedRatio;
+    m_jointSpeed = _speed * m_SpeedRatio;
 }
 
 void Robot::updatePose()
@@ -231,7 +327,6 @@ void Robot::updatePose()
 
 void Robot::updateJointStates()
 {
-    // 从ethercat读取电机位置信息之后, 调用更新
 //    m_curJoints =
     RobotState state;
     shm().state_buffer.read(state);
@@ -239,7 +334,16 @@ void Robot::updateJointStates()
     // 更新当前关节位置
     for (int i = 0; i < NUM_JOINTS; ++i) {
         m_curJoints[i] = state.joint_state[i].position;
+        m_curVelocity[i] = state.joint_state[i].velocity;
+        m_curTorque[i] = state.joint_state[i].torque;
     }
+
+    std::cout << "joints pos: ";
+    for (int i = 0; i < NUM_JOINTS; i++)
+    {
+        std::cout << " " << m_curJoints[i];
+    }
+    std::cout << std::endl;
 
 }
 
@@ -257,7 +361,7 @@ void Robot::controlLoop()
     case HighLevelCommandType::Stop:
     {
         std::cout << "stop!\n";
-        exit(0);
+//        exit(0);
         break;
     }
     case HighLevelCommandType::MoveJ:
@@ -269,16 +373,20 @@ void Robot::controlLoop()
         }
         float vel = cmd.movej_params.velocity;
 
-        printf("joint1:%f, joint2:%f, joint3:%f, joint4:%f, joint5:%f, joint6:%f, speed:%f\n", pos[0], pos[1], pos[2], pos[3], pos[4], pos[5], vel);
+//        printf("joint1:%f, joint2:%f, joint3:%f, joint4:%f, joint5:%f, joint6:%f, speed:%f\n", pos[0], pos[1], pos[2], pos[3], pos[4], pos[5], vel);
         //cmd.movej_params.velocity;
         //cmd.movej_params.acceleration;
-        planMoveJ(pos,vel);
-        std::cout << "joint: ";
-        for (int i = 0; i < NUM_JOINTS; i++)
-        {
-            std::cout << pos[i] << " ";
-        }
-        std::cout << "\n";
+        setSpeed(vel);
+
+        updateJointStates();
+        planMoveJ(pos);
+
+//        for (int i = 0; i < 5; i++)
+//        {
+//            updateJointStates();
+//            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+//        }
+
         break;
     }
     case HighLevelCommandType::MoveL:
@@ -287,14 +395,10 @@ void Robot::controlLoop()
         std::copy(std::begin(cmd.movel_params.target_pose),
                   std::end(cmd.movel_params.target_pose),
                   pose.begin());
+        float vel = cmd.movel_params.velocity;
+        setSpeed(vel);
+        updateJointStates();
         moveL(pose);
-
-        // std::cout << "pose: ";
-        // for (int i = 0; i < NUM_JOINTS; i++)
-        // {
-        //     std::cout << pose[i] << " ";
-        // }
-        // std::cout << "\n";
         break;
     }
     case HighLevelCommandType::MoveP:
@@ -310,7 +414,115 @@ void Robot::controlLoop()
         }
 
     }
+    case HighLevelCommandType::SetParm:
+    {
+        handleParameterOrder(cmd);
+        break;
+    }
     default:
+        break;
+    }
+}
+
+void Robot::handleParameterOrder(HighLevelCommand &_cmd)
+{
+    const auto& packet = _cmd.setparms;
+
+    switch (packet.mainType) {
+    case 0x01:
+        switch (packet.subType) {
+        case 0x01:
+            for (int i = 0; i < packet.valueCount; ++i)
+            {
+                m_angleLimitMax[i] = packet.values[i];
+            }
+            break;
+        case 0x02:
+            for (int i = 0; i < packet.valueCount; ++i)
+            {
+                m_angleLimitMin[i] = packet.values[i];
+            }
+            break;
+        case 0x03:
+            for (int i = 0; i < packet.valueCount; ++i)
+            {
+                m_ReducedJointPosMax[i] = packet.values[i];
+            }
+            break;
+        case 0x04:
+            for (int i = 0; i < packet.valueCount; ++i)
+            {
+                m_ReducedJointPosMin[i] = packet.values[i];
+            }
+            break;
+        case 0x05:
+            for (int i = 0; i < packet.valueCount; ++i)
+            {
+                m_JointSpeedMax[i] = packet.values[i];
+            }
+            break;
+        case 0x06:
+            for (int i = 0; i < packet.valueCount; ++i)
+            {
+                m_ReducedJointSpeedMax[i] = packet.values[i];
+            }
+            break;
+        case 0x07:
+            for (int i = 0; i < packet.valueCount; ++i)
+            {
+                m_JointTorqueMax[i] = packet.values[i];
+            }
+            break;
+        case 0x08:
+            for (int i = 0; i < packet.valueCount; ++i)
+            {
+                m_ReducedJointTorqueMax[i] = packet.values[i];
+            }
+            break;
+        }
+    case 0x10:
+        switch (packet.subType) {
+        // 最大轴速度
+        case 0x01:
+            for (int i = 0; i < packet.valueCount; ++i)
+            {
+//                m_AxisAccMax[i] = packet.values[i];
+            }
+            break;
+        case 0x02:
+            for (int i = 0; i < packet.valueCount; ++i)
+            {
+                m_AxisAccMax[i] = packet.values[i];
+            }
+            break;
+        case 0x03:
+            for (int i = 0; i < packet.valueCount; ++i)
+            {
+                m_AxisAccAccMax[i] = packet.values[i];
+            }
+            break;
+        case 0x04:
+            for (int i = 0; i < packet.valueCount; ++i)
+            {
+                m_JointCompliance[i] = packet.values[i];
+            }
+            break;
+        case 0x05:
+            if (packet.valueCount == 5)
+            {
+                m_AccRatio = packet.values[0];
+                m_AccRampUpTime = packet.values[1];
+                m_DecRampUpTime = packet.values[2];
+                m_SpeedSmoothingFactor = packet.values[3];
+                m_JogAccRampUpTime = packet.values[4];
+            }
+            break;
+        case 0x07:
+            m_LookAheadFactor = packet.values[0];
+            break;
+
+            // ...
+        }
         break;
     }
 }

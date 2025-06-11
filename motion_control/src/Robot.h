@@ -5,12 +5,17 @@
 #include "Parameters/SharedDataType.h"
 #include "Utilities/SharedMemoryManager.h"
 #include "CommandHandler.h"
+//#include "kinematics/DOF6Kinematic.h"
+#include "kinematics/Classic6dofKine.h"
 
 #define PI (3.1415926)
 
 class Robot
 {
 public:
+    Robot();
+    ~Robot();
+
     void init();
 
     void setEnable(bool _enabled);
@@ -19,7 +24,7 @@ public:
     void emergecyStop();
 
     // 
-    void planMoveJ(const std::array<float, NUM_JOINTS>& _joint_pos, float _arg_vel);
+    void planMoveJ(const std::array<float, NUM_JOINTS>& _joint_pos);
     void moveJ(const std::array<float, NUM_JOINTS>& _joint_pos);
     void moveL(std::array<float, NUM_JOINTS> _pose);
 
@@ -35,7 +40,8 @@ public:
     void controlLoop();
 
 //    CommandHandler m_commandHandler = CommandHandler(this);
-
+private:
+    void handleParameterOrder(HighLevelCommand& _cmd);
 
 public:
     const std::array<float, NUM_JOINTS> REST_POSE = {0, -73, 180, 0, 0, 0};
@@ -46,12 +52,65 @@ public:
 //    std::array<float, NUM_JOINTS> m_initPose = REST_POSE;
     std::array<float, NUM_JOINTS> m_currentPose = {0};
 
+    // 当前速度、力矩
+    std::array<float, NUM_JOINTS> m_curVelocity = {0};
+    std::array<float, NUM_JOINTS> m_curTorque = {0};
+
+    // 参数设置
+    // 关节位置
+    std::array<float, NUM_JOINTS> m_angleLimitMax;
+    std::array<float, NUM_JOINTS> m_angleLimitMin;
+    // 缩减关节位置
+    std::array<float, NUM_JOINTS> m_ReducedJointPosMax;
+    std::array<float, NUM_JOINTS> m_ReducedJointPosMin;
+    // 关节速度
+    std::array<float, NUM_JOINTS> m_JointSpeedMax;
+//    std::array<float, NUM_JOINTS> m_speedMin;
+    // 缩减关节速度
+    std::array<float, NUM_JOINTS> m_ReducedJointSpeedMax;
+    // 关节力矩
+    std::array<float, NUM_JOINTS> m_JointTorqueMax;
+    std::array<float, NUM_JOINTS> m_ReducedJointTorqueMax;
+    // 关节功率
+    std::array<float, NUM_JOINTS> m_JointPowerMax;
+    std::array<float, NUM_JOINTS> m_ReducedJointPowerMax;
+
+    // 轴加速度
+    std::array<float, NUM_JOINTS> m_AxisAccMax;
+    // 轴加加速度
+    std::array<float, NUM_JOINTS> m_AxisAccAccMax;
+    // 关节柔性系数
+    std::array<float, NUM_JOINTS> m_JointCompliance;
+
+    // 加速度倍率
+    float m_AccRatio = 1;
+    // 起步加速度上升时间
+    float m_AccRampUpTime = 0.1f;
+    // 到位减速加速度上升时间
+    float m_DecRampUpTime = 0.15f;
+    // 速度平滑系数
+    float m_SpeedSmoothingFactor;
+    // Jog模式加速度上升时间
+    float m_JogAccRampUpTime = 0.2f;
+
+    // 前瞻系数
+    float m_LookAheadFactor;
+
+    // 全局速度缩放
+    float m_SpeedRatio = 1;
+
+    // 每个关节的减速比
+    std::array<float, NUM_JOINTS> m_GearRatio = {10, 10, 10, 10, 10, 10};
+    // 编码器位数
+    std::array<float, NUM_JOINTS> m_Encoderbit;
+
 private:
     bool enabled = false;
 
     float m_jointSpeed = DEFAULT_JOINT_SPEED;
-    float m_jointSpeedRatio = 1;
-    std::array<float, NUM_JOINTS> m_dynamicJointSpeeds = {0};
+//    std::array<float, NUM_JOINTS> m_dynamicJointSpeeds = {0};
+
+//    DOF6Kinematic* dof6Solver;
 
 };
 

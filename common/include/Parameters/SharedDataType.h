@@ -139,9 +139,12 @@ struct HighLevelCommand {
         } setio_params;
         // 设置参数
         struct {
-            uint8_t param_type; // 参数类型，用于指定设置哪一个参数
-            float param_value;
+            uint8_t mainType;       // 主类型（如 Motion、Control）
+            uint8_t subType;        // 子类型（如 MaxSpeed、SafetyZone）
+            uint8_t valueCount;     // 数组个数
+            float values[NUM_JOINTS];
         } setparms;
+
 
         struct {
             uint32_t hold_time_ms;

@@ -15,9 +15,9 @@ public:
 
     // 控制器发送， ethercat 读取发给电机驱动器
     static moodycamel::ReaderWriterQueue<LowLevelCommand, 128> joint_commands;
-    // 关节参数， ethercat 写入
-    // 需要加锁进行读取写入
-    static std::array<JointState, NUM_JOINTS> joint_state;
+//    // 关节参数， ethercat 写入
+//    // 需要加锁进行读取写入
+//    static std::array<JointState, NUM_JOINTS> joint_state;
 
 };
 
