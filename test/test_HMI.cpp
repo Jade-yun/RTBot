@@ -61,6 +61,12 @@ int main() {
             
             if (argNum < 6) continue;
 
+            if (speed > 25)
+            {
+                std::cout << "输入速度超出限制,以将速度改为25!\n";
+                speed = 25;
+            }
+            
             // 转换为弧度
             for (int i = 0; i < 6; i++)
             {
@@ -85,6 +91,11 @@ int main() {
 
             if (argNum < 6) continue;
 
+            if (speed > 75)
+            {
+                std::cout << "输入速度超出限制,以将速度改为75!\n";
+                speed = 75;
+            }
 
             for (int i = 3; i < 6; i++)
             {

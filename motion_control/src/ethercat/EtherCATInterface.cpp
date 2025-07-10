@@ -34,7 +34,7 @@ DynamicalModel model;
 
 constexpr int NUM_SLAVES = 2;
 
-uint32_t Joint_Zero_Offset[4] = {500000, 150000}; //记录偏移
+uint32_t Joint_Zero_Offset[6] = {500000, 150000}; //记录偏移
 
 uint32_t SlaveVID[] = {0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7};
 uint32_t SlavePID[] = {0x005e0402, 0x006b0402, 0x005e0402, 0x005e0402, 0x005e0402, 0x005e0402};
@@ -428,19 +428,6 @@ bool EtherCATInterface::init()
         std::cerr << "Failed to get domain data pointer.\n";
         return false;
     }
-    
-    printf("初始化PDO输出字段...\n");
-    for (int i = 0; i < NUM_SLAVES; i++) 
-    {
-        // 初始化目标位置为0（稍后会被实际位置覆盖）
-        EC_WRITE_U32(domain_pd_ + offset.Target_Position[i], 0);
-        // 初始化目标速度为0
-        EC_WRITE_S32(domain_pd_ + offset.Target_velocity[i], 0);
-        // 初始化目标转矩为0
-        EC_WRITE_S16(domain_pd_ + offset.targetTorque[i], 0);
-        // 初始化控制字为0（禁用状态）
-        EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0);
-    }
 
     return true;
 }
@@ -568,12 +555,23 @@ void EtherCATInterface::runTask()
 
         actual_torque[i] = EC_READ_S32(domain_pd_ + offset.actualTorque[i]);
     }
+    static std::array<signed int, NUM_SLAVES> target_pos_pulse;
+    static bool target_pos_initialized = false;
+    static bool last_all_operation_enable = false;
+    
+    // 只在第一次或者电机刚启用时同步位置，避免突转和脉冲缓慢变小
+    if (!target_pos_initialized || (!last_all_operation_enable && all_operation_enable)) {
+        target_pos_pulse = actual_pos_pulse;
+        target_pos_initialized = true;
+    }
+    last_all_operation_enable = all_operation_enable;
 
     static uint32_t print_cnt = 0;
     if (print_cnt == 100)
     {
         printf("Joint Current: %d %d\n", actual_pos_pulse[0], actual_pos_pulse[1]);   
-        printf("Joint Velocity: %d %d\n", actual_vel[0], actual_vel[1]); 
+        printf("target pulse: %d %d\n",target_pos_pulse[0], target_pos_pulse[1]);
+        // printf("Joint Velocity: %d %d\n", actual_vel[0], actual_vel[1]); 
         printf("GlobalParams::isMoving: %d\n", GlobalParams::isMoving);
   
         // printf("Joint Torque: %d %d\n", actual_torque[0], actual_torque[1]); 
@@ -582,8 +580,8 @@ void EtherCATInterface::runTask()
     }   
     print_cnt++;
 
-    static std::array<signed int, NUM_SLAVES> target_pos_pulse;
-    target_pos_pulse = actual_pos_pulse;
+    // static std::array<signed int, NUM_SLAVES> target_pos_pulse;
+    // target_pos_pulse = actual_pos_pulse;
 
     if (all_operation_enable)
     {

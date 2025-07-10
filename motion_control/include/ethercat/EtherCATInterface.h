@@ -11,7 +11,7 @@
 #include "ethercat/config_hcfa.h"
 
 #define MINROBOTPOSITION 1000000  //轴运动最小坐标
-extern uint32_t Joint_Zero_Offset[4];
+extern uint32_t Joint_Zero_Offset[6];
 
 class EtherCATInterface
 {
