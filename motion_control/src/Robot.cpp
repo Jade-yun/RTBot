@@ -59,6 +59,11 @@ void Robot::emergecyStop()
 /*关节空间点到点插补*/
 void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
 {
+    // 重置状态标志，开始新的运动
+    GlobalParams::isStop = false;
+    GlobalParams::isPause = false;
+    GlobalParams::isResume = false;
+    
     char Speed_planning_step = 0; //0:未规划 1：预测减速阶段 2：加速处理阶段 3：匀速预测减速阶段 4：三段减速阶段
     double current_cycle_tim = 0.001; //当前插补时间
     double temp_accumu_tim = 0;   //预测减速段的累积时间
@@ -164,6 +169,29 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
         // 检查停止和暂停状态
         if (GlobalParams::isStop) {
             std::cout << "检测到停止指令，退出插补\n";
+            // 平滑减速到停止
+            if (current_joint_v > 0.01) {  // 如果还有速度
+                current_joint_j = -limit_joint_jmax;  // 使用最大减速度
+                current_joint_a = current_joint_a + current_joint_j * current_cycle_tim;
+                // 减速过程中加速度可以为负，不要强制设置为0
+                current_joint_v = current_joint_v + current_joint_a * current_cycle_tim;
+                if (current_joint_v < 0) current_joint_v = 0;  // 防止负速度
+                
+                // 继续插补到当前减速位置
+                current_joint_l = current_joint_v * current_cycle_tim;
+                current_joint_suml += current_joint_l;
+                
+                interpol_propor = current_joint_suml / sum_joint_l;
+                for(int i = 0; i < NUM_JOINTS; i++) 
+                {
+                    Joint_Tar_pos[i] = start_pos[i] + (end_pos[i] - start_pos[i]) * interpol_propor;
+                }
+                m_curJoints = Joint_Tar_pos;
+                moveJoints(m_curJoints);
+                
+                continue;
+            }
+            GlobalParams::isStop = false;
             break;
         }
         
@@ -190,15 +218,13 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
                 }
                 m_curJoints = Joint_Tar_pos;
                 moveJoints(m_curJoints);
-                
-                printf("暂停减速: v=%.3f, a=%.3f, j=%.3f\n", current_joint_v, current_joint_a, current_joint_j);
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
                 continue;
             }
             
             // 速度已经停止，等待继续指令
             std::cout << "关节运动已暂停，等待继续指令...\n";
-            while (GlobalParams::isPause && !GlobalParams::isStop) {
+            while (GlobalParams::isPause) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                                 
                 HighLevelCommand cmd;
@@ -206,6 +232,19 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
                 {
                     handleHighPriorityCommand(cmd);
                 }
+                
+                // 检测停止命令，如果收到停止命令则退出暂停状态
+                if (GlobalParams::isStop) {
+                    std::cout << "收到停止命令，退出暂停状态\n";
+                    break;
+                }
+            }
+            
+            // 如果收到停止命令，退出函数
+            if (GlobalParams::isStop) {
+                std::cout << "收到停止命令，退出关节运动\n";
+                GlobalParams::isStop = false;
+                break;
             }
             
             // 如果是继续指令，重新计算剩余距离
@@ -461,7 +500,7 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
         }
         
         interpol_propor = current_joint_suml / sum_joint_l;
-        //计算各轴增量
+        //计算各轴目标位置
         for(int i = 0; i < NUM_JOINTS; i++) 
         {
             //interpol_propor[i] = current_joint_suml / sum_joint_l;
@@ -488,6 +527,11 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
 /*笛卡尔空间直线插补*/
 void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
 {
+    // 重置状态标志，开始新的运动
+    GlobalParams::isStop = false;
+    GlobalParams::isPause = false;
+    GlobalParams::isResume = false;
+    
    /*位置和姿态插补相关变量*/
     Kine6d start_pose;                  //开始位姿
     Kine6d end_pose;                    //结束位姿
@@ -580,11 +624,77 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
         // 检查停止和暂停状态
         if (GlobalParams::isStop) {
             std::cout << "检测到停止指令，退出直线插补\n";
+            // 平滑减速到停止
+            if (current_cartesian_v > 0.01) {  // 如果还有速度
+                current_cartesian_j = -limit_cartesian_jmax;  // 使用最大减速度
+                current_cartesian_a = current_cartesian_a + current_cartesian_j * current_cycle_tim;
+                // 减速过程中加速度可以为负，不要强制设置为0
+                current_cartesian_v = current_cartesian_v + current_cartesian_a * current_cycle_tim;
+                if (current_cartesian_v < 0) current_cartesian_v = 0;  // 防止负速度
+                
+                // 继续插补到当前减速位置
+                current_cartesian_l = current_cartesian_v * current_cycle_tim;
+                current_cartesian_suml += current_cartesian_l;
+                
+                // 位置和姿态插补
+                lamda = current_cartesian_suml / sum_cartesian_l;
+                float interp_X = start_pose.X + lamda * (end_pose.X - start_pose.X);
+                float interp_Y = start_pose.Y + lamda * (end_pose.Y - start_pose.Y);
+                float interp_Z = start_pose.Z + lamda * (end_pose.Z - start_pose.Z);
+                
+                Eigen::Quaternionf q_interp = quat_start.slerp(lamda, quat_end);
+                Eigen::Matrix3f rotm = q_interp.toRotationMatrix();
+                Eigen::Vector3f euler_angles = rotm.eulerAngles(2, 1, 0);
+                
+                Kine6d interp_pose = {interp_X, interp_Y, interp_Z, euler_angles[2], euler_angles[1], euler_angles[0], {0}, 0};
+                Kine6dSol q_sol;
+                classic6dofInvKine(&interp_pose, m_curJoints.data(), &q_sol);
+                
+                // 选择最优解并发送
+                bool valid[8];
+                int validCnt = 0;
+                for (int i = 0; i < 8; i++) {
+                    valid[i] = true;
+                    for (int j = 0; j < NUM_JOINTS; j++) {
+                        if (q_sol.sol[i][j] > m_angleLimitMax[j] || q_sol.sol[i][j] < m_angleLimitMin[j]) {
+                            valid[i] = false;
+                            break;
+                        }
+                    }
+                    if (valid[i]) validCnt++;
+                }
+                
+                if (validCnt > 0) {
+                    float minDist = std::numeric_limits<float>::max();
+                    int bestIndex = -1;
+                    for (int i = 0; i < 8; i++) {
+                        if (!valid[i]) continue;
+                        float dist = 0.0f;
+                        for (int j = 0; j < NUM_JOINTS; j++) {
+                            float d = m_curJoints[j] - q_sol.sol[i][j];
+                            dist += d * d;
+                        }
+                        if (dist < minDist) {
+                            minDist = dist;
+                            bestIndex = i;
+                        }
+                    }
+                    
+                    if (bestIndex >= 0) {
+                        for (int j = 0; j < NUM_JOINTS; j++) {
+                            m_curJoints[j] = q_sol.sol[bestIndex][j];
+                        }
+                        moveJoints(m_curJoints);
+                    }
+                }
+                continue;
+            }
+            GlobalParams::isStop = false;
             break;
         }
         
         // 暂停处理
-        if (GlobalParams::isPause && !GlobalParams::isStop) {
+        if (GlobalParams::isPause) {
             std::cout << "直线运动暂停中...\n";
             
             // 平滑减速到停止
@@ -650,25 +760,36 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
                         moveJoints(m_curJoints);
                     }
                 }
-                
-                printf("直线运动暂停减速: v=%.3f, a=%.3f, j=%.3f\n", current_cartesian_v, current_cartesian_a, current_cartesian_j);
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
                 continue;
             }
             
             // 速度已经停止，等待继续指令
             std::cout << "直线运动已暂停，等待继续指令...\n";
-            while (GlobalParams::isPause && !GlobalParams::isStop) {
+            while (GlobalParams::isPause) {
                 HighLevelCommand cmd;
                 if (shm().high_prio_cmd_queue.pop(cmd))
                 {
                     handleHighPriorityCommand(cmd);
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                
+                // 检测停止命令，如果收到停止命令则退出暂停状态
+                if (GlobalParams::isStop) {
+                    std::cout << "收到停止命令，退出暂停状态\n";
+                    break;
+                }
+            }
+            
+            // 如果收到停止命令，退出函数
+            if (GlobalParams::isStop) {
+                std::cout << "收到停止命令，退出直线运动\n";
+                GlobalParams::isStop = false;
+                break;
             }
             
             // 如果是继续指令，重新计算剩余距离
-            if (GlobalParams::isResume && !GlobalParams::isStop) {
+            if (GlobalParams::isResume) {
                 GlobalParams::isResume = false;
                 std::cout << "恢复直线运动，重新规划轨迹\n";
                 
@@ -1022,6 +1143,15 @@ void Robot::moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_
     
 }
 
+void Robot::servoJ()
+{
+    
+}
+void Robot::servoL()
+{
+    
+}
+
 void Robot::moveJoints(const std::array<float, NUM_JOINTS>& _joints)
 {
     // 关节空间插补指令
@@ -1050,6 +1180,7 @@ void Robot::moveJoints(const std::array<float, NUM_JOINTS>& _joints)
 
 void Robot::homing()
 {
+
     std::cout << "开始回零操作...\n";
     
     
@@ -1081,6 +1212,9 @@ void Robot::stop()
 {
     std::cout << "停止运动...\n";
     GlobalParams::isStop = true;
+    // 重置所有相关状态标志，确保能从任何状态退出
+    GlobalParams::isPause = false;
+    GlobalParams::isResume = false;
 }
 
 void Robot::updatePose()
@@ -1104,17 +1238,15 @@ void Robot::updateJointStates()
     RobotState state;
     shm().state_buffer.read(state);
  
-    bool moveFlag;
     // 更新当前关节位置
     for (int i = 0; i < NUM_JOINTS; ++i) {
         m_curJoints[i] = state.joint_state[i].position;
         m_curVelocity[i] = state.joint_state[i].velocity;
         m_curTorque[i] = state.joint_state[i].torque;
 
-        moveFlag = moveFlag || state.joint_state[i].motor_state;
+        // moveFlag = moveFlag || state.joint_state[i].motor_state;
     }
 
-    GlobalParams::isMoving = moveFlag;
 
     std::cout << "joints pos: ";
     for (int i = 0; i < NUM_JOINTS; i++)
@@ -1138,12 +1270,10 @@ void Robot::controlLoop()
 
         return;
     }
-    auto start = std::chrono::high_resolution_clock::now();
+
+
     if (shm().cmd_queue.pop(cmd))
     {
-        auto end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> duration = end - start;
-        std::cout << "Takes Time: " << duration.count() << " ms" << std::endl;
 
         handleNormalCommand(cmd);
     }
@@ -1154,8 +1284,11 @@ void Robot::handleHighPriorityCommand(const HighLevelCommand &_cmd)
     switch (_cmd.command_type)
     {
     case HighLevelCommandType::Homing:
-        std::cout << "Homing!\n";
-        homing();
+        if (!GlobalParams::isMoving && !GlobalParams::isStop)
+        {
+            std::cout << "Homing!\n";
+            homing();
+        }
         break;
     case HighLevelCommandType::Stop:
     {
@@ -1164,13 +1297,19 @@ void Robot::handleHighPriorityCommand(const HighLevelCommand &_cmd)
         break;
     }
     case HighLevelCommandType::Pause:
-        std::cout << "Pause!\n";
-        pause();
+        if (GlobalParams::isMoving && !GlobalParams::isStop)
+        {
+            std::cout << "Pause!\n";
+            pause();  
+        }
         break;
     case HighLevelCommandType::Resume:
     {
-        std::cout << "Resume!\n";
-        resume();
+        if (!GlobalParams::isMoving && GlobalParams::isPause && !GlobalParams::isStop)
+        {
+            std::cout << "Resume!\n";
+            resume();
+        }
         break;
     }
 
@@ -1188,6 +1327,12 @@ void Robot::handleHighPriorityCommand(const HighLevelCommand &_cmd)
 
 void Robot::handleNormalCommand(const HighLevelCommand &cmd)
 {
+    // 检查机器人状态，如果处于暂停状态，不执行运动指令
+    if (GlobalParams::isPause) {
+        std::cout << "机器人处于暂停状态，忽略运动指令\n";
+        return;
+    }
+
     switch (cmd.command_type)
     {
         case HighLevelCommandType::MoveJ:

@@ -428,6 +428,19 @@ bool EtherCATInterface::init()
         std::cerr << "Failed to get domain data pointer.\n";
         return false;
     }
+    
+    printf("初始化PDO输出字段...\n");
+    for (int i = 0; i < NUM_SLAVES; i++) 
+    {
+        // 初始化目标位置为0（稍后会被实际位置覆盖）
+        EC_WRITE_U32(domain_pd_ + offset.Target_Position[i], 0);
+        // 初始化目标速度为0
+        EC_WRITE_S32(domain_pd_ + offset.Target_velocity[i], 0);
+        // 初始化目标转矩为0
+        EC_WRITE_S16(domain_pd_ + offset.targetTorque[i], 0);
+        // 初始化控制字为0（禁用状态）
+        EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0);
+    }
 
     return true;
 }
@@ -560,18 +573,21 @@ void EtherCATInterface::runTask()
     if (print_cnt == 100)
     {
         printf("Joint Current: %d %d\n", actual_pos_pulse[0], actual_pos_pulse[1]);   
-        printf("Joint Velocity: %d %d\n", actual_vel[0], actual_vel[1]);   
+        printf("Joint Velocity: %d %d\n", actual_vel[0], actual_vel[1]); 
+        printf("GlobalParams::isMoving: %d\n", GlobalParams::isMoving);
+  
         // printf("Joint Torque: %d %d\n", actual_torque[0], actual_torque[1]); 
 
         print_cnt = 0;
-    }
+    }   
     print_cnt++;
-    
 
-    static std::array<signed int, NUM_SLAVES> target_pos_pulse = actual_pos_pulse;
+    static std::array<signed int, NUM_SLAVES> target_pos_pulse;
+    target_pos_pulse = actual_pos_pulse;
 
     if (all_operation_enable)
     {
+
         // 获取电机指令
         LowLevelCommand montor_cmd;
         if (GlobalParams::joint_commands.try_dequeue(montor_cmd))
@@ -690,6 +706,7 @@ void EtherCATInterface::runTask()
 
     // 传递电机状态 以供其他模块使用
     RobotState cur_state;
+    bool moveFlag;
     for (int i = 0; i < NUM_SLAVES; i++)
     {
 
@@ -709,6 +726,8 @@ void EtherCATInterface::runTask()
         {
             cur_state.joint_state[i].motor_state = 1;
         }
+        moveFlag = moveFlag || cur_state.joint_state[i].motor_state;
+        GlobalParams::isMoving = moveFlag;
         
     }
 

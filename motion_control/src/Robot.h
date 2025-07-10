@@ -31,7 +31,8 @@ public:
     void moveL(std::array<float, NUM_JOINTS> _pose, float _speed);
     void moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_JOINTS> end_pose);
     void moveJoints(const std::array<float, NUM_JOINTS>& _joints);
-    
+    void servoJ();
+    void servoL();
 
     // 设置速度
     // void setSpeed(float _speed);
