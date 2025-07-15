@@ -9,6 +9,7 @@
 #include <Eigen/Geometry>
 #include <cmath>
 #include <limits>
+#include <algorithm>
 
 extern SharedMemoryManager<SharedMemoryData> shm;
 
@@ -27,9 +28,11 @@ void Robot::init()
 
     for (int i = 0; i < NUM_JOINTS; i++)
     {
-        m_angleLimitMax[i] = 180;
-        m_angleLimitMin[i] = -180;
+        m_angleLimitMax[i] = M_PI;   // π 弧度 (180度)
+        m_angleLimitMin[i] = -M_PI;  // -π 弧度 (-180度)
     }
+    
+    std::cout << "机器人初始化完成，关节限位设置为 ±180度 (±π弧度)" << std::endl;
 }
 
 void Robot::setEnable(bool _enabled)
@@ -1143,13 +1146,267 @@ void Robot::moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_
     
 }
 
-void Robot::servoJ()
+void Robot::jogJ(uint8_t _joint_index, char _direction)
 {
+    // 检查关节索引有效性
+    if (_joint_index >= NUM_JOINTS) {
+        std::cout << "jogJ() - 无效的关节索引: " << (int)_joint_index << std::endl;
+        return;
+    }
     
-}
-void Robot::servoL()
-{
+    // 检查方向有效性
+    if (_direction != '+' && _direction != '-') {
+        std::cout << "jogJ() - 无效的方向: " << _direction << std::endl;
+        return;
+    }
     
+    std::cout << "jogJ() - 关节" << (int)_joint_index << " 方向: " << _direction << std::endl;
+    
+    // 更新当前关节状态
+    updateJointStates();
+    
+    // 点动参数设置
+    const float jog_speed = 10.0f;  // 点动速度 (度/秒)
+    const float cycle_time = 0.001f;  // 控制周期 (1ms)
+    
+    // 获取关节限位
+    float joint_limit_max = m_angleLimitMax[_joint_index];  // 弧度
+    float joint_limit_min = m_angleLimitMin[_joint_index];  // 弧度
+    
+    // 根据方向设置目标位置
+    float target_pos;
+    if (_direction == '+') {
+        target_pos = joint_limit_max;  // 正转目标位置为正关节限位
+    } else {
+        target_pos = joint_limit_min;  // 反转目标位置为负关节限位
+    }
+    
+    // 获取当前关节位置
+    float current_pos = m_curJoints[_joint_index];
+    
+    // 检查是否已经到达目标限位 - 允许到达真正的限位
+    float current_pos_deg = current_pos * 180.0f / M_PI;
+    float target_pos_deg = target_pos * 180.0f / M_PI;
+    
+    // 只有在非常接近限位时才提前退出（0.1度以内）
+    if (_direction == '+' && current_pos_deg >= target_pos_deg - 0.1f) {
+        std::cout << "jogJ() - 关节" << (int)_joint_index << " 已接近上限位，停止点动" << std::endl;
+        return;
+    }
+    if (_direction == '-' && current_pos_deg <= target_pos_deg + 0.1f) {
+        std::cout << "jogJ() - 关节" << (int)_joint_index << " 已接近下限位，停止点动" << std::endl;
+        return;
+    }
+    
+    // 计算运动距离和时间
+    float total_distance = target_pos - current_pos;
+    float total_time = std::abs(total_distance) / (jog_speed * M_PI / 180.0f);  // 总运动时间
+    
+    // 确保最小运动时间
+    total_time = std::max(total_time, 0.3f);
+    
+    // 五次多项式轨迹规划参数
+    // 边界条件: s(0) = current_pos, s(T) = target_pos, v(0) = 0, v(T) = 0, a(0) = 0, a(T) = 0
+    // 五次多项式: s(t) = a5*t^5 + a4*t^4 + a3*t^3 + a2*t^2 + a1*t + a0
+    float T = total_time;
+    float T2 = T * T;
+    float T3 = T2 * T;
+    float T4 = T3 * T;
+    float T5 = T4 * T;
+    
+    // 边界条件求解系数
+    float a0 = current_pos;  // 初始位置
+    float a1 = 0.0f;         // 初始速度为0
+    float a2 = 0.0f;         // 初始加速度为0
+    float a3 = 10.0f * (target_pos - current_pos) / T3;      // 位置约束
+    float a4 = -15.0f * (target_pos - current_pos) / T4;     // 速度约束
+    float a5 = 6.0f * (target_pos - current_pos) / T5;       // 加速度约束
+    
+    // 连续点动控制循环
+    float current_time = 0.0f;
+    bool jog_finished = false;
+    
+    while (!jog_finished && !GlobalParams::isJogStop) {
+        
+        // 直接检查高优先级命令队列，处理停止命令
+        HighLevelCommand cmd;
+        if (shm().high_prio_cmd_queue.pop(cmd)) {
+            handleHighPriorityCommand(cmd);
+            // 检查是否是停止命令
+            if (GlobalParams::isJogStop) {
+                std::cout << "jogJ() - 处理高优先级命令后检测到停止，开始平滑减速停止" << std::endl;
+                // 不立即退出，而是进入减速停止模式
+                jog_finished = true;
+                break;
+            }
+        }
+        
+        // 计算当前时刻的位置（五次多项式）
+        float t = current_time;
+        float t2 = t * t;
+        float t3 = t2 * t;
+        float t4 = t3 * t;
+        float t5 = t4 * t;
+        float current_position = a0 + a1 * t + a2 * t2 + a3 * t3 + a4 * t4 + a5 * t5;
+        
+        // 更新目标关节位置 - 只更新指定关节，其他关节保持当前位置
+        for (int i = 0; i < NUM_JOINTS; i++) {
+            if (i == _joint_index) {
+                m_targetJoints[i] = current_position;
+            } else {
+                // 其他关节保持当前位置，不参与点动
+                m_targetJoints[i] = m_curJoints[i];
+            }
+        }
+        
+        // 发送关节命令到电机
+        moveJoints(m_targetJoints);
+        
+        // 更新当前关节状态
+        updateJointStates();
+        
+        // 检查是否到达目标限位 - 允许到达真正的限位
+        float current_joint_pos_deg = m_curJoints[_joint_index] * 180.0f / M_PI;
+        
+        if (_direction == '+' && current_joint_pos_deg >= target_pos_deg - 0.1f) {
+            jog_finished = true;
+            std::cout << "jogJ() - 关节" << (int)_joint_index << " 到达上限位，停止点动" << std::endl;
+        }
+        else if (_direction == '-' && current_joint_pos_deg <= target_pos_deg + 0.1f) {
+            jog_finished = true;
+            std::cout << "jogJ() - 关节" << (int)_joint_index << " 到达下限位，停止点动" << std::endl;
+        }
+        else if (current_time >= total_time) {
+            jog_finished = true;
+            std::cout << "jogJ() - 关节" << (int)_joint_index << " 点动完成" << std::endl;
+        }
+        
+        // 等待下一个控制周期
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        current_time += cycle_time;
+    }
+    
+    // 点动结束处理
+    if (GlobalParams::isJogStop) {
+        // 如果是因为停止命令退出，执行平滑减速停止
+        std::cout << "jogJ() - 执行平滑减速停止" << std::endl;
+        
+        float emergency_stop_time = 0.2f;  // 紧急停止时间
+        float stop_start_time = 0.0f;
+        float stop_start_pos = m_curJoints[_joint_index];
+        
+        // 估算当前速度（基于轨迹规划）
+        float current_velocity = 0.0f;
+        if (current_time > 0) {
+            // 计算当前时刻的速度（五次多项式的导数）
+            float t = current_time;
+            float t2 = t * t;
+            float t3 = t2 * t;
+            float t4 = t3 * t;
+            current_velocity = a1 + 2.0f * a2 * t + 3.0f * a3 * t2 + 4.0f * a4 * t3 + 5.0f * a5 * t4;
+        }
+        
+        // 平滑减速参数
+        float initial_velocity = current_velocity;
+        float deceleration = initial_velocity / emergency_stop_time;  // 线性减速
+        
+        while (stop_start_time < emergency_stop_time) {
+            // 计算当前时刻的速度（线性减速）
+            float current_stop_velocity = initial_velocity * (1.0f - stop_start_time / emergency_stop_time);
+            
+            // 计算位置增量
+            float position_increment = current_stop_velocity * cycle_time;
+            
+            // 更新停止位置
+            float stop_position = stop_start_pos + position_increment;
+            
+            // 检查关节限位，防止减速过程中超出限位
+            if (stop_position > m_angleLimitMax[_joint_index]) {
+                stop_position = m_angleLimitMax[_joint_index];
+            } else if (stop_position < m_angleLimitMin[_joint_index]) {
+                stop_position = m_angleLimitMin[_joint_index];
+            }
+            
+            stop_start_pos = stop_position;  // 更新起始位置用于下次计算
+            
+            // 更新目标关节位置
+            for (int i = 0; i < NUM_JOINTS; i++) {
+                if (i == _joint_index) {
+                    m_targetJoints[i] = stop_position;
+                } else {
+                    m_targetJoints[i] = m_curJoints[i];
+                }
+            }
+            
+            moveJoints(m_targetJoints);
+            updateJointStates();
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            stop_start_time += cycle_time;
+        }
+        
+        std::cout << "jogJ() - 平滑减速停止完成" << std::endl;
+    } else {
+        // 正常结束，平滑减速到目标位置
+        // 平滑减速到目标限位位置
+        float stop_time = 0.3f;  // 停止时间
+        float stop_start_time = 0.0f;
+        float stop_start_pos = m_curJoints[_joint_index];
+        float stop_target_pos = target_pos;  // 停止目标是真正的限位位置
+        
+        // 如果当前位置已经非常接近目标位置，直接停止
+        float pos_diff = std::abs(stop_start_pos - stop_target_pos);
+        if (pos_diff < 0.001f) {  // 小于0.001弧度（约0.057度）
+            std::cout << "jogJ() - 关节" << (int)_joint_index << " 已到达目标位置，无需额外停止" << std::endl;
+        } else {
+            // 为停止轨迹计算五次多项式参数
+            float stop_T = stop_time;
+            float stop_T2 = stop_T * stop_T;
+            float stop_T3 = stop_T2 * stop_T;
+            float stop_T4 = stop_T3 * stop_T;
+            float stop_T5 = stop_T4 * stop_T;
+            
+            float stop_a0 = stop_start_pos;
+            float stop_a1 = 0.0f;  // 初始速度为0
+            float stop_a2 = 0.0f;  // 初始加速度为0
+            float stop_a3 = 10.0f * (stop_target_pos - stop_start_pos) / stop_T3;
+            float stop_a4 = -15.0f * (stop_target_pos - stop_start_pos) / stop_T4;
+            float stop_a5 = 6.0f * (stop_target_pos - stop_start_pos) / stop_T5;
+            
+            while (stop_start_time < stop_time && !GlobalParams::isJogStop) {
+                // 计算停止轨迹 - 使用五次多项式确保平滑停止
+                float stop_t = stop_start_time;
+                float stop_t2 = stop_t * stop_t;
+                float stop_t3 = stop_t2 * stop_t;
+                float stop_t4 = stop_t3 * stop_t;
+                float stop_t5 = stop_t4 * stop_t;
+                float stop_position = stop_a0 + stop_a1 * stop_t + stop_a2 * stop_t2 + 
+                                    stop_a3 * stop_t3 + stop_a4 * stop_t4 + stop_a5 * stop_t5;
+                
+                // 更新目标关节位置 - 只更新指定关节，其他关节保持当前位置
+                for (int i = 0; i < NUM_JOINTS; i++) {
+                    if (i == _joint_index) {
+                        m_targetJoints[i] = stop_position;
+                    } else {
+                        // 其他关节保持当前位置，不参与点动
+                        m_targetJoints[i] = m_curJoints[i];
+                    }
+                }
+                moveJoints(m_targetJoints);
+                updateJointStates();
+                
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                stop_start_time += cycle_time;
+            }
+            
+        }
+    }
+    
+    // 重置点动停止标志
+    GlobalParams::isJogStop = false;
+    
+    std::cout << "jogJ() - 关节" << (int)_joint_index << " 点动结束，当前位置: " 
+              << m_curJoints[_joint_index] * 180.0f / M_PI << "度" << std::endl;
 }
 
 void Robot::moveJoints(const std::array<float, NUM_JOINTS>& _joints)
@@ -1217,20 +1474,40 @@ void Robot::stop()
     GlobalParams::isResume = false;
 }
 
+void Robot::stopJog()
+{
+    std::cout << "stopJog() - 停止点动" << std::endl;
+    GlobalParams::isJogStop = true;
+    
+    // 不要立即重置停止标志，让jogJ函数自己处理
+    // 等待一小段时间确保停止命令被处理
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    
+    std::cout << "stopJog() - 点动停止命令已发送" << std::endl;
+}
+
 void Robot::updatePose()
 {
-    // RobotState state;
-    // shm().state_buffer.read(state);
+    RobotState state;
+    shm().state_buffer.read(state);
 
-    // Kine6d cur_pose;
-    // m_curJoints[i] = state.joint_state[i].position;
-    // classic6dofForKine(m_curJoints.data(), &cur_pose);
-    // std::cout << "cur_pose: ";
-    // for (int i = 0; i < 6; i++)
-    // {
-    //     std::cout << " " << cur_pose[i];
-    // }
-    // std::cout << std::endl;
+    Kine6d cur_pose;
+    for (int i = 0; i < NUM_JOINTS; i++)
+    {
+        m_curJoints[i] = state.joint_state[i].position;
+    }
+    classic6dofForKine(m_curJoints.data(), &cur_pose);
+    std::cout << "cur_pose: ";
+    for (int i = 0; i < 6; i++)
+    {
+        std::cout << "cur_pose: "
+          << cur_pose.X << " "
+          << cur_pose.Y << " "
+          << cur_pose.Z << " "
+          << cur_pose.A << " "
+          << cur_pose.B << " "
+          << cur_pose.C << std::endl;
+    }
 }
 
 void Robot::updateJointStates()
@@ -1312,6 +1589,13 @@ void Robot::handleHighPriorityCommand(const HighLevelCommand &_cmd)
         }
         break;
     }
+    
+    case HighLevelCommandType::JogStop:
+    {
+        std::cout << "JogStop!\n";
+        stopJog();
+        break;
+    }
 
 //        case HighLevelCommandType::SetParm:
 //        {
@@ -1387,6 +1671,20 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             handleParameterOrder(cmd);
             break;
         }
+        
+        case HighLevelCommandType::JogJ:
+        {
+            uint8_t joint_index = cmd.jogj_params.joint_index;
+            char direction = cmd.jogj_params.direction;
+            
+            std::cout << "JogJ - 关节" << (int)joint_index << " 方向: " << direction << std::endl;
+            
+            updateJointStates();
+            jogJ(joint_index, direction);
+            updateJointStates();
+            break;
+        }
+        
         default:
             break;
     }

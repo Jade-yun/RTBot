@@ -30,10 +30,10 @@ public:
     void moveJ(const std::array<float, NUM_JOINTS>& _joint_pos, float _speed);
     void moveL(std::array<float, NUM_JOINTS> _pose, float _speed);
     void moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_JOINTS> end_pose);
-    void moveJoints(const std::array<float, NUM_JOINTS>& _joints);
-    void servoJ();
-    void servoL();
-
+    void moveJoints(const std::array<float, NUM_JOINTS>& _joints);  
+    void jogJ(uint8_t _joint_index, char _direction);
+    void stopJog();  // 停止点动
+    void jogL();
     // 设置速度
     // void setSpeed(float _speed);
     // 调用运动学正解，更新位姿

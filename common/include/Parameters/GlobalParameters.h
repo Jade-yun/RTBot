@@ -23,6 +23,7 @@ public:
     static bool isStop;
     static bool isMoving;
     static bool isResume;
+    static bool isJogStop;  // 点动停止标志
 
 };
 

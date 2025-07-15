@@ -30,6 +30,8 @@ enum class HighLevelCommandType : uint8_t {
     SetIO,    // IO控制指令（Set IO）：设置数字量IO，例如打开夹爪
     SetParm,  // 设置参数
     Wait,     // 等待（Wait）
+    JogJ,     // 关节点动（Jog Joint）
+    JogStop,  // 停止点动（Jog Stop）
 };
 
 // 机械结构参数
@@ -155,6 +157,12 @@ struct HighLevelCommand {
         struct {
             uint32_t wait_time_ms;
         } wait_params;
+        
+        // 关节点动
+        struct {
+            uint8_t joint_index;  // 关节索引 (0-5)
+            char direction;       // 方向 ('+' 或 '-')
+        } jogj_params;
     };
 };
 

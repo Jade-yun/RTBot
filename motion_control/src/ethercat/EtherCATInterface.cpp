@@ -556,15 +556,6 @@ void EtherCATInterface::runTask()
         actual_torque[i] = EC_READ_S32(domain_pd_ + offset.actualTorque[i]);
     }
     static std::array<signed int, NUM_SLAVES> target_pos_pulse;
-    static bool target_pos_initialized = false;
-    static bool last_all_operation_enable = false;
-    
-    // 只在第一次或者电机刚启用时同步位置，避免突转和脉冲缓慢变小
-    if (!target_pos_initialized || (!last_all_operation_enable && all_operation_enable)) {
-        target_pos_pulse = actual_pos_pulse;
-        target_pos_initialized = true;
-    }
-    last_all_operation_enable = all_operation_enable;
 
     static uint32_t print_cnt = 0;
     if (print_cnt == 100)
@@ -626,6 +617,7 @@ void EtherCATInterface::runTask()
                 break;
             case (ready_to_switch_on):
                 EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x07);
+                target_pos_pulse[i] = actual_pos_pulse[i];
                 break;
                 
                 /*

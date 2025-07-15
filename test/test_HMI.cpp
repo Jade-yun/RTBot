@@ -7,6 +7,13 @@
 #include "Parameters/SharedDataType.h"
 
 // === HMI 程序 ===
+// 
+// 点动功能使用示例：
+// 1. 输入 j0+ 启动关节0正向点动
+// 2. 输入 s 停止点动
+// 3. 输入 j1- 启动关节1负向点动
+// 4. 输入 s 停止点动
+//
 SharedMemoryManager<SharedMemoryData> shm(SharedMemoryManager<SharedMemoryData>::Attacher);
 
 int main() {
@@ -24,12 +31,16 @@ int main() {
         }
 
         std::cout << "=== Robot Command Line Interface ===\n";
+        std::cout << "----------------AUTO----------------\n";
         std::cout << "Use >x,x,x,x,x,x,speed for MoveJ (speed <= 25)\n";
         std::cout << "Use @x,x,x,x,x,x,speed for MoveL (speed <= 75)\n";
         std::cout << "Use p to Pause\n";
         std::cout << "Use r to Resume\n";
         std::cout << "Use q to stop\n";
-        std::cout << "Use h to Homing\n\n";
+        std::cout << "Use h to Homing\n";
+        std::cout << "---------------MANUAL---------------\n";
+        std::cout << "Use j<joint_index><direction> for JogJ (例如: j0+, j1-)\n";
+        std::cout << "Use s to stop jog\n\n";
 
         std::string cmd_str;
         int argNum = 0;
@@ -121,6 +132,34 @@ int main() {
             cmd.command_type = HighLevelCommandType::Resume;
             cmd.command_index = index;
         }
+        else if (cmd_str[0] == 'j' && cmd_str.length() >= 3)
+        {
+            // 解析点动命令，格式：j<joint_index><direction>
+            int joint_index = cmd_str[1] - '0';  // 关节索引
+            char direction = cmd_str[2];         // 方向
+            
+            if (joint_index >= 0 && joint_index < NUM_JOINTS && (direction == '+' || direction == '-'))
+            {
+                index++;
+                cmd.command_type = HighLevelCommandType::JogJ;
+                cmd.command_index = index;
+                cmd.jogj_params.joint_index = joint_index;
+                cmd.jogj_params.direction = direction;
+                
+                std::cout << "发送点动命令: 关节" << joint_index << " 方向: " << direction << std::endl;
+            }
+            else
+            {
+                std::cout << "无效的点动命令格式！请使用 j<0-5><+/-> 格式\n";
+                continue;
+            }
+        }
+        else if (cmd_str[0] == 's')
+        {
+            index++;
+            cmd.command_type = HighLevelCommandType::JogStop;
+            cmd.command_index = index;
+        }
         else {
             continue;
         }
@@ -129,7 +168,8 @@ int main() {
         bool isHighPriorityCmd = (cmd.command_type == HighLevelCommandType::Stop || 
                                   cmd.command_type == HighLevelCommandType::Homing ||
                                   cmd.command_type == HighLevelCommandType::Pause ||
-                                  cmd.command_type == HighLevelCommandType::Resume);
+                                  cmd.command_type == HighLevelCommandType::Resume ||
+                                  cmd.command_type == HighLevelCommandType::JogStop);
         
         bool cmdSent = false;
         if (isHighPriorityCmd)
