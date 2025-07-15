@@ -1165,6 +1165,77 @@ void Robot::jogJ(uint8_t _joint_index, char _direction)
     // 更新当前关节状态
     updateJointStates();
     
+    // 点动速度设置
+    const float jog_speed = 10.0f;  // 点动速度 (度/秒)
+    
+    // 获取关节限位
+    float joint_limit_max = m_angleLimitMax[_joint_index];  // 弧度
+    float joint_limit_min = m_angleLimitMin[_joint_index];  // 弧度
+    
+    // 获取当前关节位置
+    float current_pos = m_curJoints[_joint_index];
+    
+    // 根据方向确定目标位置
+    float target_pos;
+    if (_direction == '+') {
+        target_pos = joint_limit_max;  // 正向运动到上限位
+        
+        // 检查是否已经在上限位附近
+        float current_pos_deg = current_pos * 180.0f / M_PI;
+        float limit_max_deg = joint_limit_max * 180.0f / M_PI;
+        
+        if (current_pos_deg >= limit_max_deg - 0.1f) {
+            std::cout << "jogJ() - 关节" << (int)_joint_index << " 已在上限位附近，无需点动" << std::endl;
+            return;
+        }
+    } else {
+        target_pos = joint_limit_min;  // 负向运动到下限位
+        
+        // 检查是否已经在下限位附近
+        float current_pos_deg = current_pos * 180.0f / M_PI;
+        float limit_min_deg = joint_limit_min * 180.0f / M_PI;
+        
+        if (current_pos_deg <= limit_min_deg + 0.1f) {
+            std::cout << "jogJ() - 关节" << (int)_joint_index << " 已在下限位附近，无需点动" << std::endl;
+            return;
+        }
+    }
+    
+    // 构造目标关节位置数组 - 只移动指定关节，其他关节保持当前位置
+    std::array<float, NUM_JOINTS> target_joints = m_curJoints;
+    target_joints[_joint_index] = target_pos;
+    
+    // 调用moveJ函数执行点动到限位
+    moveJ(target_joints, jog_speed);
+    
+    // 更新当前关节状态
+    updateJointStates();
+    
+    std::cout << "jogJ() - 关节" << (int)_joint_index << " 点动完成，当前位置: " 
+              << m_curJoints[_joint_index] * 180.0f / M_PI << "度" << std::endl;
+}
+
+
+#if 0 // 五次多项式插值点动函数（不调moveJ）
+void Robot::jogJ(uint8_t _joint_index, char _direction)
+{
+    // 检查关节索引有效性
+    if (_joint_index >= NUM_JOINTS) {
+        std::cout << "jogJ() - 无效的关节索引: " << (int)_joint_index << std::endl;
+        return;
+    }
+    
+    // 检查方向有效性
+    if (_direction != '+' && _direction != '-') {
+        std::cout << "jogJ() - 无效的方向: " << _direction << std::endl;
+        return;
+    }
+    
+    std::cout << "jogJ() - 关节" << (int)_joint_index << " 方向: " << _direction << std::endl;
+    
+    // 更新当前关节状态
+    updateJointStates();
+    
     // 点动参数设置
     const float jog_speed = 10.0f;  // 点动速度 (度/秒)
     const float cycle_time = 0.001f;  // 控制周期 (1ms)
@@ -1408,6 +1479,102 @@ void Robot::jogJ(uint8_t _joint_index, char _direction)
     std::cout << "jogJ() - 关节" << (int)_joint_index << " 点动结束，当前位置: " 
               << m_curJoints[_joint_index] * 180.0f / M_PI << "度" << std::endl;
 }
+#endif
+
+
+void Robot::jogL(char axis, char _direction)
+{
+    // 检查轴参数有效性
+    if (axis != 'X' && axis != 'x' && axis != 'Y' && axis != 'y' && 
+        axis != 'Z' && axis != 'z' && axis != 'R' && axis != 'r' && 
+        axis != 'P' && axis != 'p' && axis != 'W' && axis != 'w') {
+        std::cout << "jogL() - 无效的轴参数: " << axis << std::endl;
+        return;
+    }
+    
+    // 检查方向有效性
+    if (_direction != '+' && _direction != '-') {
+        std::cout << "jogL() - 无效的方向: " << _direction << std::endl;
+        return;
+    }
+    
+    std::cout << "jogL() - 轴: " << axis << " 方向: " << _direction << std::endl;
+    
+    // 更新当前关节状态
+    updateJointStates();
+    
+    // 获取当前末端位姿
+    Kine6d current_pose;
+    classic6dofForKine(m_curJoints.data(), &current_pose);
+    
+    // 点动参数设置
+    const float linear_jog_distance = 50.0f;   // 线性轴点动距离 (mm)
+    const float angular_jog_distance = 10.0f;  // 角度轴点动距离 (度)
+    const float jog_speed = 50.0f;             // 点动速度
+    
+    // 计算目标位姿
+    Kine6d target_pose = current_pose;
+    
+    // 根据轴和方向设置目标位姿
+    float increment = 0.0f;
+    switch (toupper(axis)) {
+        case 'X':
+            increment = (_direction == '+') ? linear_jog_distance : -linear_jog_distance;
+            target_pose.X += increment;
+            std::cout << "jogL() - X轴移动 " << increment << "mm" << std::endl;
+            break;
+            
+        case 'Y':
+            increment = (_direction == '+') ? linear_jog_distance : -linear_jog_distance;
+            target_pose.Y += increment;
+            std::cout << "jogL() - Y轴移动 " << increment << "mm" << std::endl;
+            break;
+            
+        case 'Z':
+            increment = (_direction == '+') ? linear_jog_distance : -linear_jog_distance;
+            target_pose.Z += increment;
+            std::cout << "jogL() - Z轴移动 " << increment << "mm" << std::endl;
+            break;
+            
+        case 'R':
+            increment = (_direction == '+') ? angular_jog_distance : -angular_jog_distance;
+            target_pose.A += increment * M_PI / 180.0f;  // 转换为弧度
+            std::cout << "jogL() - R轴旋转 " << increment << "度" << std::endl;
+            break;
+            
+        case 'P':
+            increment = (_direction == '+') ? angular_jog_distance : -angular_jog_distance;
+            target_pose.B += increment * M_PI / 180.0f;  // 转换为弧度
+            std::cout << "jogL() - P轴旋转 " << increment << "度" << std::endl;
+            break;
+            
+        case 'W':  // Yaw轴（绕Z轴旋转）
+            increment = (_direction == '+') ? angular_jog_distance : -angular_jog_distance;
+            target_pose.C += increment * M_PI / 180.0f;  // 转换为弧度
+            std::cout << "jogL() - W轴旋转 " << increment << "度" << std::endl;
+            break;
+    }
+    
+    // 构造目标位姿数组
+    std::array<float, 6> target_pose_array = {
+        target_pose.X, target_pose.Y, target_pose.Z,
+        target_pose.A, target_pose.B, target_pose.C
+    };
+    
+    std::cout << "jogL() - 目标位姿: X=" << target_pose.X 
+              << " Y=" << target_pose.Y << " Z=" << target_pose.Z
+              << " A=" << target_pose.A * 180.0f / M_PI
+              << " B=" << target_pose.B * 180.0f / M_PI  
+              << " C=" << target_pose.C * 180.0f / M_PI << std::endl;
+    
+    // 调用moveL函数执行笛卡尔空间运动
+    moveL(target_pose_array, jog_speed);
+    
+    // 更新当前关节状态
+    updateJointStates();
+    
+    std::cout << "jogL() - 笛卡尔点动完成" << std::endl;
+}
 
 void Robot::moveJoints(const std::array<float, NUM_JOINTS>& _joints)
 {
@@ -1434,6 +1601,7 @@ void Robot::moveJoints(const std::array<float, NUM_JOINTS>& _joints)
         }
     }
 }
+
 
 void Robot::homing()
 {

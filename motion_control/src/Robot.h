@@ -33,7 +33,7 @@ public:
     void moveJoints(const std::array<float, NUM_JOINTS>& _joints);  
     void jogJ(uint8_t _joint_index, char _direction);
     void stopJog();  // 停止点动
-    void jogL();
+    void jogL(char axis, char _direction);
     // 设置速度
     // void setSpeed(float _speed);
     // 调用运动学正解，更新位姿
