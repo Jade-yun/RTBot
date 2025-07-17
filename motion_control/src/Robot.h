@@ -30,10 +30,9 @@ public:
     void moveJ(const std::array<float, NUM_JOINTS>& _joint_pos, float _speed);
     void moveL(std::array<float, NUM_JOINTS> _pose, float _speed);
     void moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_JOINTS> end_pose);
-    void moveJoints(const std::array<float, NUM_JOINTS>& _joints);  
-    void jogJ(uint8_t _joint_index, char _direction);
-    void stopJog();  // 停止点动
-    void jogL(char axis, char _direction);
+    void moveJoints(const std::array<float, NUM_JOINTS>& _joints);
+    void jogJ(uint8_t _model, uint8_t _joint_index, uint8_t _direction);
+    void jogL(uint8_t axis, uint8_t _direction);
     // 设置速度
     // void setSpeed(float _speed);
     // 调用运动学正解，更新位姿
@@ -52,6 +51,12 @@ private:
     void handleHighPriorityCommand(const HighLevelCommand &_cmd);
     void handleNormalCommand(const HighLevelCommand& cmd);
     void handleParameterOrder(const HighLevelCommand& _cmd);
+    
+    // 速度规划函数
+    bool executeSpeedPlanning(double& current_joint_v, double& current_joint_a, double& current_joint_j,
+                             double& current_joint_l, double& current_joint_suml,
+                             double sum_joint_l, double limit_joint_vmax, double limit_joint_amax, double limit_joint_jmax,
+                             char& Speed_planning_step, double current_cycle_tim);
 
 public:
     const std::array<float, NUM_JOINTS> REST_JOINT = {0, 0, 0, 0, 0, 0};

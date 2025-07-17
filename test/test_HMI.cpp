@@ -34,13 +34,15 @@ int main() {
         std::cout << "----------------AUTO----------------\n";
         std::cout << "Use >x,x,x,x,x,x,speed for MoveJ (speed <= 25)\n";
         std::cout << "Use @x,x,x,x,x,x,speed for MoveL (speed <= 75)\n";
+        std::cout << "---------------MANUAL---------------\n";
+        std::cout << "Use j<model><joint_index><direction> for JogJ (model:0连续,1微动; joint_index:0-5; direction:1正向,0负向)\n";
+        std::cout << "Use l<axis><direction> for JogL (axis:1-6; direction:1正向,0负向)\n";
+        std::cout << "---------------COMMON----------------\n";
         std::cout << "Use p to Pause\n";
         std::cout << "Use r to Resume\n";
         std::cout << "Use q to stop\n";
         std::cout << "Use h to Homing\n";
-        std::cout << "---------------MANUAL---------------\n";
-        std::cout << "Use j<joint_index><direction> for JogJ (例如: j0+, j1-)\n";
-        std::cout << "Use s to stop jog\n\n";
+        std::cout << "====================================\n\n";
 
         std::string cmd_str;
         int argNum = 0;
@@ -132,35 +134,55 @@ int main() {
             cmd.command_type = HighLevelCommandType::Resume;
             cmd.command_index = index;
         }
-        else if (cmd_str[0] == 'j' && cmd_str.length() >= 3)
+        else if (cmd_str[0] == 'j' && cmd_str.length() >= 4)
         {
-            // 解析点动命令，格式：j<joint_index><direction>
-            int joint_index = cmd_str[1] - '0';  // 关节索引
-            char direction = cmd_str[2];         // 方向
-            
-            if (joint_index >= 0 && joint_index < NUM_JOINTS && (direction == '+' || direction == '-'))
+            // 解析点动命令，格式：j<model><joint_index><direction>
+            int model = cmd_str[1] - '0';         // 模式 0 连续点动, 1 微动
+            int joint_index = cmd_str[2] - '0';  // 关节索引
+            int direction = cmd_str[3] - '0';         // 方向
+            if ((model == 0 || model == 1) && joint_index >= 0 && joint_index < NUM_JOINTS &&
+                (direction == 1 || direction == 0)) // 方向 '1' 正向, '0' 负向
             {
                 index++;
                 cmd.command_type = HighLevelCommandType::JogJ;
                 cmd.command_index = index;
+                cmd.jogj_params.model = model;
                 cmd.jogj_params.joint_index = joint_index;
                 cmd.jogj_params.direction = direction;
                 
-                std::cout << "发送点动命令: 关节" << joint_index << " 方向: " << direction << std::endl;
+                std::cout << "发送点动命令: 模式 " << model << ", 关节" << joint_index << " 方向: " << direction << std::endl;
             }
             else
             {
-                std::cout << "无效的点动命令格式！请使用 j<0-5><+/-> 格式\n";
+                std::cout << "无效的点动命令格式！请使用 j<model><joint_index><1/0> 格式\n";
                 continue;
             }
         }
-        else if (cmd_str[0] == 's')
+        else if (cmd_str[0] == 'l' && cmd_str.length() >= 3)
         {
-            index++;
-            cmd.command_type = HighLevelCommandType::JogStop;
-            cmd.command_index = index;
+            // 解析笛卡尔点动命令，格式：l<axis><direction>
+            int axis = cmd_str[1] - '0';      // 轴
+            int direction = cmd_str[2] - '0'; // 方向
+
+            if ((axis == 1 || axis == 2 || axis == 3 || axis == 4 || axis == 5 || axis == 6) &&
+                (direction == 1 || direction == 0))
+            {
+                index++;
+                cmd.command_type = HighLevelCommandType::JogL;
+                cmd.command_index = index;
+                cmd.jogl_params.axis = axis;
+                cmd.jogl_params.direction = direction;
+                
+                std::cout << "发送笛卡尔点动命令: 轴" << axis << " 方向: " << direction << std::endl;
+            }
+            else
+            {
+                std::cout << "无效的笛卡尔点动命令格式！请使用 l<1/2/3/4/5/6><1/0> 格式\n";
+                continue;
+            }
         }
-        else {
+        else 
+        {
             continue;
         }
 
@@ -168,10 +190,9 @@ int main() {
         bool isHighPriorityCmd = (cmd.command_type == HighLevelCommandType::Stop || 
                                   cmd.command_type == HighLevelCommandType::Homing ||
                                   cmd.command_type == HighLevelCommandType::Pause ||
-                                  cmd.command_type == HighLevelCommandType::Resume ||
-                                  cmd.command_type == HighLevelCommandType::JogStop);
+                                  cmd.command_type == HighLevelCommandType::Resume);
         
-        bool cmdSent = false;
+        bool cmdSent = false;   
         if (isHighPriorityCmd)
         {
             cmdSent = shm().high_prio_cmd_queue.push(cmd);

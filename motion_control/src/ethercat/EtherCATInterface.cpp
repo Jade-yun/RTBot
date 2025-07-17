@@ -560,10 +560,10 @@ void EtherCATInterface::runTask()
     static uint32_t print_cnt = 0;
     if (print_cnt == 100)
     {
-        printf("Joint Current: %d %d\n", actual_pos_pulse[0], actual_pos_pulse[1]);   
-        printf("target pulse: %d %d\n",target_pos_pulse[0], target_pos_pulse[1]);
+        // printf("Joint Current: %d %d\n", actual_pos_pulse[0], actual_pos_pulse[1]);   
+        // printf("target pulse: %d %d\n",target_pos_pulse[0], target_pos_pulse[1]);
         // printf("Joint Velocity: %d %d\n", actual_vel[0], actual_vel[1]); 
-        printf("GlobalParams::isMoving: %d\n", GlobalParams::isMoving);
+        // printf("GlobalParams::isMoving: %d\n", GlobalParams::isMoving);
   
         // printf("Joint Torque: %d %d\n", actual_torque[0], actual_torque[1]); 
 

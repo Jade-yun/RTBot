@@ -31,7 +31,7 @@ enum class HighLevelCommandType : uint8_t {
     SetParm,  // 设置参数
     Wait,     // 等待（Wait）
     JogJ,     // 关节点动（Jog Joint）
-    JogStop,  // 停止点动（Jog Stop）
+    JogL,     // 笛卡尔点动（Jog Linear）
 };
 
 // 机械结构参数
@@ -160,9 +160,16 @@ struct HighLevelCommand {
         
         // 关节点动
         struct {
+            uint8_t model;          // 模式 '0' 连续点动, '1' 微动
             uint8_t joint_index;  // 关节索引 (0-5)
-            char direction;       // 方向 ('+' 或 '-')
+            uint8_t direction;       // 方向 ('1'正向 或 '0'负向)
         } jogj_params;
+
+        // 笛卡尔点动
+        struct {
+            uint8_t axis;
+            uint8_t direction;
+        } jogl_params;
     };
 };
 
