@@ -613,8 +613,10 @@ void EtherCATInterface::runTask()
                 EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x80);
                 break;
             case (switch_on_disable):
+            {
                 EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x06);
                 break;
+            }
             case (ready_to_switch_on):
                 EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x07);
                 target_pos_pulse[i] = actual_pos_pulse[i];
@@ -696,7 +698,7 @@ void EtherCATInterface::runTask()
 
     // 传递电机状态 以供其他模块使用
     RobotState cur_state;
-    bool moveFlag;
+    bool moveFlag = false;
     for (int i = 0; i < NUM_SLAVES; i++)
     {
 
