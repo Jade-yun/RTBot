@@ -12,16 +12,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # set(CMAKE_CXX_EXTENSIONS OFF)  # 禁用 GNU 扩展
 
-
+# 设置构建类型（Debug 或 Release）
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the type of build." FORCE)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build." FORCE)
 endif()
-
-# # 针对Release构建类型添加优化选项
-# if(CMAKE_BUILD_TYPE STREQUAL "Release")
-#     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -DNDEBUG")
-#     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG")
-# endif()
+# 开启 O3 优化
+if (CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+endif()
 
 set(CMAKE_INSTALL_PREFIX ${CMAKE_BINARY_DIR}/install)
 

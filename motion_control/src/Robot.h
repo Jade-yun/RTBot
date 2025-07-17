@@ -29,7 +29,8 @@ public:
     //void planMoveJ(const std::array<float, NUM_JOINTS>& _joint_pos);
     void moveJ(const std::array<float, NUM_JOINTS>& _joint_pos, float _speed);
     void moveL(std::array<float, NUM_JOINTS> _pose, float _speed);
-    void moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_JOINTS> end_pose);
+    void moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_JOINTS> end_pose, float speed);
+    void moveCF(std::array<float, NUM_JOINTS> pose1, std::array<float, NUM_JOINTS> pose2, float speed);
     void moveJoints(const std::array<float, NUM_JOINTS>& _joints);
     void servoJ();
     void servoL();

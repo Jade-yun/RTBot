@@ -10,6 +10,12 @@
 #include <cmath>
 #include <limits>
 
+//#define VISUALIZE_INTERP_RES
+
+#ifdef VISUALIZE_INTERP_RES
+#include <fstream>
+#endif
+
 extern SharedMemoryManager<SharedMemoryData> shm;
 
 Robot::Robot()
@@ -939,7 +945,7 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
                 tempnext_cartesian_a = 0;
                 tempnext_cartesian_j = 0;
                 tempnext_cartesian_v = current_cartesian_v;
-                tempnext_cartesian_l = tempnext_cartesian_v * current_cycle_tim; //10ms周期走一个
+                tempnext_cartesian_l = tempnext_cartesian_v * current_cycle_tim;
 
 
                 if(Deceleration_section == 3) {
@@ -1120,8 +1126,12 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
                     targetJoints[i] = q_sol.sol[bestIndex][i];//单位弧度
                 }
 
-                printf("target_joint1: %f\n", targetJoints[0]);
-                printf("target_joint2: %f\n", targetJoints[1]);
+                printf("moveL, current joints: ");
+                for (int i = 0; i < NUM_JOINTS; i++)
+                {
+                    std::cout << targetJoints[i] << " ";
+                }
+                std::cout << "\n";
 
                 //更新状态以进行下一次迭代
                 m_curJoints = targetJoints;
@@ -1137,10 +1147,427 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
 }
 
 /*笛卡尔空间圆弧插补*/
-void Robot::moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_JOINTS> end_pose)
+void Robot::moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_JOINTS> end_pose, float speed)
 {
     // 圆弧插补
+//    // 状态复位
+//    GlobalParams::isStop = false;
+//    GlobalParams::isPause = false;
+//    GlobalParams::isResume = false;
+
+    // 起点、圆弧过渡点、终点
+    Kine6d start_pose;
+    classic6dofForKine(m_curJoints.data(), &start_pose);
+
+    Eigen::Vector3d P0(start_pose.X, start_pose.Y, start_pose.Z);
+    Eigen::Vector3d P1(mid_pose[0], mid_pose[1], mid_pose[2]);
+    Eigen::Vector3d P2(end_pose[0], end_pose[1], end_pose[2]);
+
+    // 姿态转换为四元数
+    auto eulerToQuat = [](double A, double B, double C) {
+        return Eigen::AngleAxisd(C, Eigen::Vector3d::UnitZ()) *
+                Eigen::AngleAxisd(B, Eigen::Vector3d::UnitY()) *
+                Eigen::AngleAxisd(A, Eigen::Vector3d::UnitX());
+    };
+
+    Eigen::Quaterniond quat_start = eulerToQuat(start_pose.A, start_pose.B, start_pose.C);
+    Eigen::Quaterniond quat_mid   = eulerToQuat(mid_pose[3], mid_pose[4], mid_pose[5]);
+    Eigen::Quaterniond quat_end   = eulerToQuat(end_pose[3], end_pose[4], end_pose[5]);
+
+    // 插值圆弧路径参数
+    Eigen::Vector3d v1 = P1 - P0;
+    Eigen::Vector3d v2 = P2 - P1;
+    Eigen::Vector3d normal = v1.cross(v2).normalized();
+
+    Eigen::Vector3d mid1 = (P0 + P1) / 2.0f;
+    Eigen::Vector3d mid2 = (P1 + P2) / 2.0f;
+    Eigen::Vector3d dir1 = normal.cross(P1 - P0).normalized();
+    Eigen::Vector3d dir2 = normal.cross(P2 - P1).normalized();
+
+    // 解最小二乘：mid1 + t1*dir1 = mid2 + t2*dir2
+    Eigen::Matrix<double, 3, 2> A;
+    A.col(0) = dir1;
+    A.col(1) = -dir2;
+    Eigen::Vector3d b = mid2 - mid1;
+
+    Eigen::Vector2d x = (A.transpose() * A).ldlt().solve(A.transpose() * b);
+    Eigen::Vector3d center = mid1 + x(0) * dir1;
+
+    double radius = (P0 - center).norm();
+    Eigen::Vector3d n = (P0 - center).normalized();
+    Eigen::Vector3d m = normal.cross(n);
+
+    double angle_total = std::atan2((P2 - center).dot(m), (P2 - center).dot(n));
+    double theta_total = std::abs(angle_total); // 总角度
+
+
+    /*速度规划相关变量*/
+    int Speed_planning_step = 0;       //0:未规划 1：预测减速阶段 2：加速处理阶段 3：匀速预测减速阶段 4：三段减速阶段
+    double current_cycle_tim = 0.001;   //当前插补时间
+//    double temp_accumu_tim = 0;         //预测减速段的累积时间
+    double current_cartesian_v = 0.0;   //当前笛卡尔空间速度
+    double current_cartesian_a = 0.0;   //当前笛卡尔空间加速度
+    double current_cartesian_j = 0.0;   //当前笛卡尔空间加加速度
+    double tempnext_cartesian_v = 0.0;  //预测下一步笛卡尔空间速度
+    double tempnext_cartesian_a = 0.0;  //预测下一步笛卡尔空间加速度
+    double tempnext_cartesian_j = 0.0;  //预测下一步笛卡尔空间加加速度
+    double tempnext_cartesian_l = 0.0;  //预增加已走的距离
+    double tempnext_accdec_l = 0.0;     //减加速段走的距离
+    double tempnext_accdec_v = 0.0;     //减加速段末速度
+    double tempnext_dec_l = 0.0;        //减速段距离
+    double acc_dec_num = 0;             //减加速过程的插补点数-计算得到
+    double dec_count_num = 0;           //减速过程当前插补点数
+    uint32_t dec_count_start = 0;       //阶段性开始插补参数
+    uint32_t last_dec_count_num = 0;    //减加速过程上一个插补点数
+    uint32_t acc_dec_currentn = 0;      //减加速阶段插补次数
+    double acc_dec_start_a = 0.0;       //减加速阶段初始加速度
+    double acc_dec_start_v = 0.0;       //减加速阶段初始速度
+    double acc_dec_start_l = 0.0;       //减加速阶段初始位移
+    uint8_t Deceleration_section = 0.0; //减速段的实际段数
+    double decelera_t5 = 0.0;           //第一减速段时间
+    double decelera_t6 = 0.0;           //第二减速段时间
+    double decelera_t7 = 0.0;           //第三减速段时间
+    double decelera_amin = 0.0;         //由减速初末速度限制的减速最小减速度
+    double dec_start_a = 0.0;           //减速阶段初始加速度
+    double dec_start_v = 0.0;           //减速阶段初始速度
+    double dec_start_l = 0.0;           //减速阶段初始位移
+//    double residual_amount = 0.0;       //各阶段切换时的插补余量
+    double limit_cartesian_amax = 250;//关节空间运动时的最大加速度-最大力矩输出另外限制（m/s^2）
+    double limit_cartesian_jmax = 800;//关节空间运动时的最大加加速度(m/s^3)
+    //关节空间指令设定的最大速度(m/s)
+    double limit_cartesian_vmax = speed * m_SpeedRatio; //实际再多乘个比例系数;
+
+    bool interpol_finish = false;         //插补结束标志
+
+
+    double current_cartesian_l = 0.0;   //当前周期需要走的距离
+    double current_cartesian_suml = 0.0;//当前已经走过的距离
+
+    // 需要移动的总距离
+    // 笛卡尔空间圆弧长
+    double sum_cartesian_l = radius * theta_total;
+
+    double ratio = 0.0;
+
+    Speed_planning_step = 1;   //开始插补
+
+#ifdef VISUALIZE_INTERP_RES
+
+    std::ofstream fout("arc_trajectory.csv");
+    fout << "x,y,z,qx,qy,qz,qw\n";
+#endif
+
+    /*----------带预测减速的S型速度规划----------*/
+    while(interpol_finish != true)
+    {
+        //加减速处理
+        if(Speed_planning_step == 1) {
+            //预测减速阶段
+            //Step1-以J进行加速
+            tempnext_cartesian_j = limit_cartesian_jmax;
+            tempnext_cartesian_a = tempnext_cartesian_j*current_cycle_tim + current_cartesian_a; //以J对a进行增加
+            tempnext_cartesian_v = current_cartesian_v + current_cartesian_a*current_cycle_tim + tempnext_cartesian_j*current_cycle_tim*current_cycle_tim / 2;
+            tempnext_cartesian_l = current_cartesian_v*current_cycle_tim + current_cartesian_a*current_cycle_tim*current_cycle_tim / 2 + \
+                    tempnext_cartesian_j*current_cycle_tim*current_cycle_tim*current_cycle_tim / 6;
+            //先判断速度是否超限位
+            if(tempnext_cartesian_v > limit_cartesian_vmax) {
+                tempnext_cartesian_v = limit_cartesian_vmax;
+                tempnext_cartesian_j = 2*(tempnext_cartesian_v - current_cartesian_v - current_cartesian_a*current_cycle_tim) / current_cycle_tim*current_cycle_tim;
+                tempnext_cartesian_a = current_cartesian_a + tempnext_cartesian_j*current_cycle_tim;
+                tempnext_cartesian_l = current_cartesian_v*current_cycle_tim + current_cartesian_a*current_cycle_tim*current_cycle_tim / 2 \
+                        + tempnext_cartesian_j * current_cycle_tim*current_cycle_tim*current_cycle_tim / 6;
+            }
+            //再判断加速度是否超限位
+            if(tempnext_cartesian_a > limit_cartesian_amax) {
+                //预测阶段超过最大加速度
+                tempnext_cartesian_a = limit_cartesian_amax;
+                tempnext_cartesian_j = (tempnext_cartesian_a - current_cartesian_a) / current_cycle_tim;
+                tempnext_cartesian_v = current_cartesian_v + current_cartesian_a * current_cycle_tim + tempnext_cartesian_j*current_cycle_tim*current_cycle_tim / 2;
+                tempnext_cartesian_l = current_cartesian_v*current_cycle_tim + current_cartesian_a*current_cycle_tim*current_cycle_tim / 2 \
+                        + tempnext_cartesian_j*current_cycle_tim*current_cycle_tim*current_cycle_tim / 6;
+            }
+
+            //Step2-以-J进行减速-得到减加速的距离-同时获得减加速后的速度
+            tempnext_accdec_v = tempnext_cartesian_v + tempnext_cartesian_a*tempnext_cartesian_a / (2*limit_cartesian_jmax);
+            tempnext_accdec_l = tempnext_cartesian_v * tempnext_cartesian_a / limit_cartesian_jmax + tempnext_cartesian_a*tempnext_cartesian_a*tempnext_cartesian_a / (3*limit_cartesian_jmax*limit_cartesian_jmax);
+
+            //Step3-以三阶段减速方式-计算减速距离
+            if(tempnext_accdec_v >= limit_cartesian_vmax) {
+                //减加速后达到的速度超过设定速度-即刻进加速处理阶段
+                Speed_planning_step = 2;
+                acc_dec_currentn = 1;         //进入时初始化插补次数
+                acc_dec_num = abs(current_cartesian_a / (limit_cartesian_jmax*current_cycle_tim)); //加速阶段插补点数
+                //减加速阶段初始参数
+                acc_dec_start_a = current_cartesian_a;
+                acc_dec_start_v = current_cartesian_v;
+                acc_dec_start_l = current_cartesian_l;
+            }else {
+                //计算三段各自的时间-最小a 最大a-距离、速度-距离后面判断
+                if(tempnext_accdec_v > limit_cartesian_amax*limit_cartesian_amax / limit_cartesian_jmax) {
+                    //存在三段减速段
+                    tempnext_dec_l = tempnext_accdec_v * ( limit_cartesian_amax/(2*limit_cartesian_jmax) + tempnext_accdec_v/(2*limit_cartesian_amax) );
+                    //得到三段减速数据
+                    decelera_t5 = limit_cartesian_amax / (limit_cartesian_jmax*current_cycle_tim);
+                    decelera_t6 = (tempnext_accdec_v / (limit_cartesian_amax*current_cycle_tim)) - decelera_t5;
+                    decelera_t7 = decelera_t5;
+                    decelera_amin = -limit_cartesian_amax;
+                    Deceleration_section = 3;
+                }else {
+                    //只有两段减速段
+                    tempnext_dec_l = (tempnext_accdec_v) * sqrt(tempnext_accdec_v / limit_cartesian_jmax);
+                    //得到两段减速数据
+                    decelera_t5 = sqrt(tempnext_accdec_v / (limit_cartesian_jmax))/current_cycle_tim;
+                    decelera_t6 = 0;
+                    decelera_t7 = decelera_t5;
+                    decelera_amin = limit_cartesian_jmax * decelera_t5;
+                    Deceleration_section = 2;
+                }
+                //判断三阶段减速距离 tempnext_cartesian_v~0
+                if( (sum_cartesian_l-current_cartesian_suml) < tempnext_dec_l+tempnext_accdec_l+tempnext_cartesian_l) {
+                    //距离超过所给距离-进入加速处理阶段
+                    Speed_planning_step = 2;
+                    acc_dec_currentn = 1;         //进入时初始化插补次数
+                    acc_dec_num = abs(current_cartesian_a / (limit_cartesian_jmax*current_cycle_tim)); //加速阶段插补点数
+                    acc_dec_start_a = current_cartesian_a;
+                    acc_dec_start_v = current_cartesian_v;
+                    acc_dec_start_l = current_cartesian_l;
+                }else {
+                    //距离还够用-继续预测减速阶段
+                    Speed_planning_step = 1;
+                    current_cartesian_a = tempnext_cartesian_a; //用于下次规划判断
+                    current_cartesian_v = tempnext_cartesian_v;
+                    current_cartesian_j = tempnext_cartesian_j;
+                    current_cartesian_l = tempnext_cartesian_l; //用于长轴增量插补
+                    current_cartesian_suml += current_cartesian_l;
+                    //剩余距离-可写可不写了
+                }
+            }
+        }
+        if(Speed_planning_step == 2) {
+            //减加速处理阶段
+            current_cartesian_j = -limit_cartesian_jmax;
+            if(acc_dec_currentn <= acc_dec_num) {
+
+                current_cartesian_l = current_cartesian_v*current_cycle_tim + current_cartesian_a*current_cycle_tim*current_cycle_tim / 2 \
+                        + current_cartesian_j * current_cycle_tim*current_cycle_tim*current_cycle_tim / 6;
+
+                current_cartesian_a = acc_dec_start_a + current_cartesian_j*acc_dec_currentn*current_cycle_tim;
+
+                current_cartesian_v = acc_dec_start_v + acc_dec_start_a*acc_dec_currentn*current_cycle_tim + current_cartesian_j \
+                        * acc_dec_currentn*acc_dec_currentn*current_cycle_tim*current_cycle_tim / 2;
+
+
+                current_cartesian_suml += current_cartesian_l;
+                acc_dec_currentn++; //减加速阶段插补次数自增
+
+            }
+
+            if(acc_dec_currentn > acc_dec_num)
+            {
+                //到达插补点数-进入匀速预测减速阶段
+                Speed_planning_step = 3;
+            }
+        }
+        if(Speed_planning_step == 3) {
+            //匀速预测减速阶段
+            //Step1-匀速计算一个周期
+            tempnext_cartesian_a = 0;
+            tempnext_cartesian_j = 0;
+            tempnext_cartesian_v = current_cartesian_v;
+            tempnext_cartesian_l = tempnext_cartesian_v * current_cycle_tim;
+
+
+            if(Deceleration_section == 3) {
+                //计算三段减速距离
+                tempnext_dec_l = (current_cartesian_v) * (limit_cartesian_amax / (2*limit_cartesian_jmax) + (current_cartesian_v / 2*limit_cartesian_amax));
+                decelera_t5 = limit_cartesian_amax / (limit_cartesian_jmax*current_cycle_tim);
+                decelera_t6 = (tempnext_cartesian_v / (limit_cartesian_amax*current_cycle_tim) ) - decelera_t5;
+                decelera_t7 = decelera_t5;
+                decelera_amin = -limit_cartesian_amax;
+            }else if(Deceleration_section == 2) {
+                //只有两段减速距离
+                tempnext_dec_l = (current_cartesian_v)*sqrt(current_cartesian_v / limit_cartesian_jmax);
+                decelera_t5 = sqrt(tempnext_cartesian_v / (limit_cartesian_jmax))/current_cycle_tim;
+                if(decelera_t5 - (int)decelera_t5 >= 0.5) {
+                    decelera_t5 = decelera_t5+1;
+                }
+                decelera_t6 = 0;
+                decelera_t7 = decelera_t5;
+                decelera_amin = limit_cartesian_jmax * decelera_t5;
+            }
+
+            //判断是否超过剩余距离
+            if(tempnext_dec_l+tempnext_cartesian_l > (sum_cartesian_l - current_cartesian_suml)) {
+                //超过剩余距离，不可匀速
+                Speed_planning_step = 4;
+                //进减速阶段初始状态
+                current_cartesian_l = (sum_cartesian_l - current_cartesian_suml) - tempnext_dec_l;
+                current_cartesian_suml += current_cartesian_l;
+
+                dec_count_num = 1;
+
+                dec_start_a = current_cartesian_a;
+                dec_start_v = current_cartesian_v;
+                dec_start_l = current_cartesian_l;
+            }else {
+                current_cartesian_j = tempnext_cartesian_j;
+                current_cartesian_a = tempnext_cartesian_a;
+                current_cartesian_v = tempnext_cartesian_v;
+                current_cartesian_l = tempnext_cartesian_l;
+                current_cartesian_suml += current_cartesian_l;
+                //重新赋值减速量-以上面算的为准
+            }
+        }
+        if(Speed_planning_step == 4) {
+            //三段减速处理阶段
+            last_dec_count_num = dec_count_num;
+
+            if(dec_count_num <= decelera_t5) {
+                current_cartesian_j = -limit_cartesian_jmax;
+
+                current_cartesian_l = current_cartesian_v*current_cycle_tim + current_cartesian_a*current_cycle_tim*current_cycle_tim / 2 \
+                        + current_cartesian_j * current_cycle_tim*current_cycle_tim*current_cycle_tim / 6;
+
+                current_cartesian_a = dec_start_a + current_cartesian_j*dec_count_num*current_cycle_tim;
+
+                current_cartesian_v = dec_start_v + dec_start_a*dec_count_num*current_cycle_tim + current_cartesian_j * dec_count_num \
+                        * dec_count_num * current_cycle_tim * current_cycle_tim / 2;
+
+                current_cartesian_suml += current_cartesian_l;
+
+            }else if(dec_count_num > decelera_t5 && dec_count_num <= decelera_t6+decelera_t5) {
+                current_cartesian_j = 0;
+                current_cartesian_l = current_cartesian_v*current_cycle_tim + current_cartesian_a*current_cycle_tim*current_cycle_tim / 2;
+                current_cartesian_a = dec_start_a;
+                current_cartesian_v = dec_start_v + dec_start_a*(dec_count_num-dec_count_start)*current_cycle_tim;
+
+                current_cartesian_suml += current_cartesian_l;
+
+            }else if(dec_count_num > decelera_t6+decelera_t5 && dec_count_num <= decelera_t6+decelera_t5+decelera_t7) {
+
+                current_cartesian_j = limit_cartesian_jmax;
+
+                current_cartesian_l = current_cartesian_v*current_cycle_tim + current_cartesian_a*current_cycle_tim*current_cycle_tim / 2 \
+                        + current_cartesian_j * current_cycle_tim*current_cycle_tim*current_cycle_tim / 6;
+
+                current_cartesian_a = dec_start_a + current_cartesian_j*(dec_count_num-dec_count_start)*current_cycle_tim;
+
+                current_cartesian_v = dec_start_v + dec_start_a*(dec_count_num-dec_count_start)*current_cycle_tim + current_cartesian_j \
+                        * (dec_count_num-dec_count_start)*(dec_count_num-dec_count_start)*current_cycle_tim*current_cycle_tim / 2;
+
+                current_cartesian_suml += current_cartesian_l;
+
+            }
+
+            dec_count_num++;//不考虑插补余量-预计会有到达误差
+
+            if(dec_count_num >= decelera_t5+decelera_t6+decelera_t7) {
+                //插补计算结束
+                interpol_finish = 1;
+            }
+
+            //阶段切换时初始位置保存
+            if(last_dec_count_num <= decelera_t5 && dec_count_num > decelera_t5) {
+
+                dec_start_a = current_cartesian_a;
+                dec_start_v = current_cartesian_v;
+                dec_count_start = decelera_t5;
+
+            }else if(last_dec_count_num <= decelera_t5+decelera_t6 && dec_count_num > decelera_t5+decelera_t6) {
+
+                dec_start_a = current_cartesian_a;
+                dec_start_v = current_cartesian_v;
+                dec_count_start = decelera_t5+decelera_t6 ;
+            }
+        }
+
+        ratio = current_cartesian_suml / sum_cartesian_l;
+
+
+        double theta = ratio * angle_total;
+
+        Eigen::Vector3d pos = center + std::cos(theta) * n * radius + std::sin(theta) * m * radius;
+
+        Eigen::Quaterniond quat_interp;
+        quat_interp = quat_start.slerp(ratio, quat_end);
+
+        Eigen::Matrix3d R = quat_interp.toRotationMatrix();
+        Eigen::Vector3d euler = R.eulerAngles(2, 1, 0); // ZYX
+#ifdef VISUALIZE_INTERP_RES
+        fout << pos.x() << "," << pos.y() << "," << pos.z() << ","
+             << quat_interp.x() << "," << quat_interp.y() << "," << quat_interp.z() << "," << quat_interp.w() << "\n";
+#endif
+        Kine6d pose;
+        pose.X = pos.x();
+        pose.Y = pos.y();
+        pose.Z = pos.z();
+        pose.A = euler[2];
+        pose.B = euler[1];
+        pose.C = euler[0];
+        pose.fgR = 0;
+
+        Kine6dSol q_sol;
+        classic6dofInvKine(&pose, m_curJoints.data(), &q_sol);
+
+        // 选最优解
+        bool valid[8];
+        int best = -1;
+        float best_dist = 1e6;
+        for (int k = 0; k < 8; ++k)
+        {
+            valid[k] = true;
+            for (int j = 0; j < NUM_JOINTS; ++j)
+            {
+                if (q_sol.sol[k][j] < m_angleLimitMin[j] || q_sol.sol[k][j] > m_angleLimitMax[j])
+                {
+                    valid[k] = false;
+                    break;
+                }
+            }
+            if (valid[k])
+            {
+                float dist = 0;
+                for (int j = 0; j < NUM_JOINTS; ++j)
+                    dist += std::pow(m_curJoints[j] - q_sol.sol[k][j], 2);
+                if (dist < best_dist)
+                {
+                    best = k;
+                    best_dist = dist;
+                }
+            }
+        }
+
+        if (best >= 0)
+        {
+            std::array<float, NUM_JOINTS> target;
+            for (int j = 0; j < NUM_JOINTS; ++j)
+                target[j] = q_sol.sol[best][j];
+            m_curJoints = target;
+
+            printf("moveC, target Joints: %f %f %f %f %f %f %f\n",
+                   target[0], target[1], target[2], target[3],target[4], target[5]);
+            moveJoints(target);
+        }
+
+//        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+//        if (GlobalParams::isStop) break;
+//        while (GlobalParams::isPause) {
+//            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+//            if (GlobalParams::isStop) return;
+//        }
+    }
+
+#ifdef VISUALIZE_INTERP_RES
+
+    fout.close();
+#endif
     
+}
+
+void Robot::moveCF(std::array<float, NUM_JOINTS> pose1, std::array<float, NUM_JOINTS> pose2, float speed)
+{
+
 }
 
 void Robot::servoJ()
@@ -1343,9 +1770,8 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
                     pos.begin());
             float speed = cmd.movej_params.velocity;
 
-            updateJointStates();
+//            updateJointStates();
             moveJ(pos, speed);
-            updateJointStates();
             break;
         }
         case HighLevelCommandType::MoveL:
@@ -1356,16 +1782,42 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
                     pose.begin());
             float speed = cmd.movel_params.velocity;
 
-            updateJointStates();
+//            updateJointStates();
             moveL(pose, speed);
-            updateJointStates();
             break;
         }
         case HighLevelCommandType::MoveC:
         {
+            std::array<float, 6> pose_mid;
+            std::array<float, 6> pose_end;
+            std::copy(std::begin(cmd.movec_params.via_pose),
+                      std::end(cmd.movec_params.via_pose),
+                      pose_mid.begin());
+            std::copy(std::begin(cmd.movec_params.target_pose),
+                      std::end(cmd.movec_params.target_pose),
+                      pose_end.begin());
+            float speed = cmd.movec_params.velocity;
+
+            moveC(pose_mid, pose_end, speed);
+            break;
             
             break;
         }
+    case HighLevelCommandType::MoveCF:
+    {
+        std::array<float, 6> pose1;
+        std::array<float, 6> pose2;
+        std::copy(std::begin(cmd.movecf_params.pose1),
+                  std::end(cmd.movecf_params.pose1),
+                  pose1.begin());
+        std::copy(std::begin(cmd.movecf_params.pose2),
+                  std::end(cmd.movecf_params.pose2),
+                  pose2.begin());
+        float speed = cmd.movecf_params.velocity;
+
+        moveCF(pose1, pose2, speed);
+        break;
+    }
 
         case HighLevelCommandType::MoveP:
         {

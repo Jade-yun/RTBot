@@ -22,6 +22,7 @@ enum class HighLevelCommandType : uint8_t {
     MoveJ,    // 关节空间插补运动到目标关节角度（Joint Space Move）
     MoveL,    // 笛卡尔空间直线轨迹（Linear Move in Cartesian Space）
     MoveC,    // 圆弧插补移动（Circular Move）
+    MoveCF,   // 全圆弧插补移动（Full Circular Move）
     MoveP,    // 多点轨迹（Move Path），经过一系列途经点的关节轨迹运动
     PlayTraj, // 播放轨迹
     Hold,     // 保持当前位置（Hold Current Position）
@@ -114,6 +115,13 @@ struct HighLevelCommand {
             float velocity;
             float acceleration;
         } movec_params;
+
+        struct {
+            float pose1[6]; // 辅助点1位姿
+            float pose2[6]; // 辅助点2位姿
+            float velocity;
+            float acceleration;
+        } movecf_params;
 
         struct {
             float target_joint_pos[NUM_JOINTS];

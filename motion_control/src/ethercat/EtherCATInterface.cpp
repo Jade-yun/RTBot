@@ -556,22 +556,22 @@ void EtherCATInterface::runTask()
         actual_torque[i] = EC_READ_S32(domain_pd_ + offset.actualTorque[i]);
     }
     static std::array<signed int, NUM_SLAVES> target_pos_pulse;
-    static bool target_pos_initialized = false;
-    static bool last_all_operation_enable = false;
+//    static bool target_pos_initialized = false;
+//    static bool last_all_operation_enable = false;
     
-    // 只在第一次或者电机刚启用时同步位置，避免突转和脉冲缓慢变小
-    if (!target_pos_initialized || (!last_all_operation_enable && all_operation_enable)) {
-        target_pos_pulse = actual_pos_pulse;
-        target_pos_initialized = true;
-    }
-    last_all_operation_enable = all_operation_enable;
+//    // 只在第一次或者电机刚启用时同步位置，避免突转和脉冲缓慢变小
+//    if (!target_pos_initialized || (!last_all_operation_enable && all_operation_enable)) {
+//        target_pos_pulse = actual_pos_pulse;
+//        target_pos_initialized = true;
+//    }
+//    last_all_operation_enable = all_operation_enable;
 
     static uint32_t print_cnt = 0;
     if (print_cnt == 100)
     {
-        printf("Joint Current: %d %d\n", actual_pos_pulse[0], actual_pos_pulse[1]);   
+        printf("Joint Position: %d %d\n", actual_pos_pulse[0], actual_pos_pulse[1]);
         printf("target pulse: %d %d\n",target_pos_pulse[0], target_pos_pulse[1]);
-        // printf("Joint Velocity: %d %d\n", actual_vel[0], actual_vel[1]); 
+        printf("Joint Velocity: %d %d\n", actual_vel[0], actual_vel[1]);
         printf("GlobalParams::isMoving: %d\n", GlobalParams::isMoving);
   
         // printf("Joint Torque: %d %d\n", actual_torque[0], actual_torque[1]); 
@@ -622,10 +622,13 @@ void EtherCATInterface::runTask()
                 EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x80);
                 break;
             case (switch_on_disable):
+            {
                 EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x06);
                 break;
+            }
             case (ready_to_switch_on):
                 EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x07);
+                target_pos_pulse[i] = actual_pos_pulse[i];
                 break;
                 
                 /*
@@ -704,7 +707,7 @@ void EtherCATInterface::runTask()
 
     // 传递电机状态 以供其他模块使用
     RobotState cur_state;
-    bool moveFlag;
+    bool moveFlag = false;
     for (int i = 0; i < NUM_SLAVES; i++)
     {
 
