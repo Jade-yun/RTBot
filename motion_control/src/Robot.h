@@ -31,8 +31,8 @@ public:
     void moveL(std::array<float, NUM_JOINTS> _pose, float _speed);
     void moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_JOINTS> end_pose);
     void moveJoints(const std::array<float, NUM_JOINTS>& _joints);
-    void jogJ(uint8_t _model, uint8_t _joint_index, uint8_t _direction);
-    void jogL(uint8_t axis, uint8_t _direction);
+    void jogJ(int _mode, int _joint_index, int _direction);
+    void jogL(int _mode, int _axis, int _direction);
     // 设置速度
     // void setSpeed(float _speed);
     // 调用运动学正解，更新位姿

@@ -160,15 +160,16 @@ struct HighLevelCommand {
         
         // 关节点动
         struct {
-            uint8_t model;          // 模式 '0' 连续点动, '1' 微动
-            uint8_t joint_index;  // 关节索引 (0-5)
-            uint8_t direction;       // 方向 ('1'正向 或 '0'负向)
+            int mode;          // 模式 '0' 连续点动, '1' 微动
+            int joint_index;  // 关节索引 (0-5)
+            int direction;       // 方向 ('1'正向 或 '0'负向)
         } jogj_params;
 
         // 笛卡尔点动
         struct {
-            uint8_t axis;
-            uint8_t direction;
+            int mode;          // 模式 '0' 连续点动, '1' 微动
+            int axis;
+            int direction;
         } jogl_params;
     };
 };

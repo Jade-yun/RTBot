@@ -59,7 +59,7 @@ void Robot::emergecyStop()
     // clearFifo();
 }
 
-/*关节空间点到点插补*/
+/* 关节空间点到点插补 */
 void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
 {
     // 重置状态标志，开始新的运动
@@ -160,7 +160,12 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
     }
 
     sum_joint_l = sum_joint_l*180.0 / M_PI; //统一单位-以角度进行插补
-
+    if (sum_joint_l < 0.001) 
+    {
+        std::cout << "目标关节位置与当前关节位置相同，跳过插补！\n";
+        return; // 如果目标位置和当前关节位置相同，直接返回
+    }
+    
     // double joint_max_speed = (3000 / 60.0) / m_GearRatio; 
 
     limit_joint_vmax = _speed * m_SpeedRatio; //实际再多乘个比例系数
@@ -519,7 +524,7 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
         //测试
         // printf("duanshu: %d\n", Speed_planning_step);
         // printf("cur_l: %f\n", current_joint_suml);
-
+        // printf("target_joint: %f %f %f %f %f %f \n", Joint_Tar_pos[0], Joint_Tar_pos[1], Joint_Tar_pos[2], Joint_Tar_pos[3], Joint_Tar_pos[4], Joint_Tar_pos[5]);
         //更新当前关节位置
         m_curJoints = Joint_Tar_pos;
 
@@ -529,7 +534,7 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
     printf("当前位姿： \n");
 }
 
-/*笛卡尔空间直线插补*/
+/* 笛卡尔空间直线插补 */
 void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
 {
     // 重置状态标志，开始新的运动
@@ -599,12 +604,11 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
     classic6dofForKine(m_curJoints.data(), &start_pose);//初始位姿 正解获取
     end_pose = {_pose[0], _pose[1], _pose[2],_pose[3], _pose[4], _pose[5], {0}, 0};//目标位姿 自行设定
     
-    sum_cartesian_l = std::sqrt(
+    double cartesian_dist = std::sqrt(
         std::pow(end_pose.X - start_pose.X, 2) +
         std::pow(end_pose.Y - start_pose.Y, 2) +
         std::pow(end_pose.Z - start_pose.Z, 2)
     );//笛卡尔空间直线插补总距离
-
 
     /*欧拉角转四元数*/
     Eigen::AngleAxisf rotA_start(start_pose.A, Eigen::Vector3f::UnitX());
@@ -617,6 +621,12 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
     Eigen::AngleAxisf rotC_end(end_pose.C, Eigen::Vector3f::UnitZ());
     Eigen::Quaternionf quat_end = rotC_end * rotB_end * rotA_end;
 
+    // 计算四元数夹角（姿态变化距离，单位：弧度）
+    double angle_dist = quat_start.angularDistance(quat_end); // Eigen自带方法
+    double rot_dist = angle_dist * 150; // 150是单位转换系数，假设每弧度对应150mm
+
+    double interpDist = std::max(cartesian_dist, rot_dist); // 取位置和姿态变化的最大值作为总距离
+    sum_cartesian_l = interpDist; // 总插补距离
 
     limit_cartesian_vmax = _speed * m_SpeedRatio; //实际再多乘个比例系数
     Speed_planning_step = 1;   //开始插补
@@ -1049,6 +1059,10 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
         }
 
         lamda = current_cartesian_suml / sum_cartesian_l;
+
+        lamda = std::min(1.0, lamda); // 确保lamda不超过1
+        lamda = std::max(0.0, lamda); // 确保lamda不小于0
+
         /*位置插补*/
         interp_X = start_pose.X + lamda * (end_pose.X - start_pose.X);
         interp_Y = start_pose.Y + lamda * (end_pose.Y - start_pose.Y);
@@ -1135,22 +1149,22 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
     printf("当前位姿： \n");
 }
 
-/*笛卡尔空间圆弧插补*/
+/* 笛卡尔空间圆弧插补 */
 void Robot::moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_JOINTS> end_pose)
 {
     // 圆弧插补
     
 }
 
-/* 关节空间点动（连续和微动）*/
-void Robot::jogJ(uint8_t _model, uint8_t _joint_index, uint8_t _direction)
+/* 关节空间手动模式（连续和寸动）*/
+void Robot::jogJ(int _mode, int _joint_index, int _direction)
 {
     // 重置状态标志，开始新的运动
     GlobalParams::isStop = false;
     GlobalParams::isPause = false;
     GlobalParams::isResume = false;
     
-    std::cout << "jogJ() - 关节" << (int)_joint_index << " 方向: " << _direction << std::endl;
+    std::cout << "jogJ() - 关节" << _joint_index << " 方向: " << _direction << std::endl;
     
     // 更新当前关节状态
     updateJointStates();
@@ -1170,7 +1184,7 @@ void Robot::jogJ(uint8_t _model, uint8_t _joint_index, uint8_t _direction)
     float target_pos = 0.0f;
     
     //判断连续还是微动
-    if (_model == 0)
+    if (_mode == 0)
     {
         // 根据方向确定目标位置
         if (_direction == 1) {
@@ -1181,7 +1195,7 @@ void Robot::jogJ(uint8_t _model, uint8_t _joint_index, uint8_t _direction)
             float limit_max_deg = joint_limit_max * 180.0f / M_PI;
             
             if (current_pos_deg >= limit_max_deg - 0.1f) {
-                std::cout << "jogJ() - 关节" << (int)_joint_index << " 已在上限位附近，无需点动" << std::endl;
+                std::cout << "jogJ() - 关节" << _joint_index << " 已在上限位附近，无需点动" << std::endl;
                 return;
             }
         } else {
@@ -1192,13 +1206,13 @@ void Robot::jogJ(uint8_t _model, uint8_t _joint_index, uint8_t _direction)
             float limit_min_deg = joint_limit_min * 180.0f / M_PI;
             
             if (current_pos_deg <= limit_min_deg + 0.1f) {
-                std::cout << "jogJ() - 关节" << (int)_joint_index << " 已在下限位附近，无需点动" << std::endl;
+                std::cout << "jogJ() - 关节" << _joint_index << " 已在下限位附近，无需点动" << std::endl;
                 return;
             }
         }
     }
 
-    if (_model == 1)
+    if (_mode == 1)
     {
         // 根据方向确定目标位置
         if (_direction == 1) {
@@ -1209,7 +1223,7 @@ void Robot::jogJ(uint8_t _model, uint8_t _joint_index, uint8_t _direction)
             float limit_max_deg = joint_limit_max * 180.0f / M_PI;
             
             if (current_pos_deg >= limit_max_deg - 0.1f) {
-                std::cout << "jogJ() - 关节" << (int)_joint_index << " 已在上限位附近，无需点动" << std::endl;
+                std::cout << "jogJ() - 关节" << _joint_index << " 已在上限位附近，无需点动" << std::endl;
                 return;
             }
         } else {
@@ -1220,7 +1234,7 @@ void Robot::jogJ(uint8_t _model, uint8_t _joint_index, uint8_t _direction)
             float limit_min_deg = joint_limit_min * 180.0f / M_PI;
             
             if (current_pos_deg <= limit_min_deg + 0.1f) {
-                std::cout << "jogJ() - 关节" << (int)_joint_index << " 已在下限位附近，无需点动" << std::endl;
+                std::cout << "jogJ() - 关节" << _joint_index << " 已在下限位附近，无需点动" << std::endl;
                 return;
             }
         }
@@ -1237,19 +1251,19 @@ void Robot::jogJ(uint8_t _model, uint8_t _joint_index, uint8_t _direction)
     // 更新当前关节状态
     updateJointStates();
     
-    std::cout << "jogJ() - 关节" << (int)_joint_index << " 点动完成，当前位置: " 
+    std::cout << "jogJ() - 关节" << _joint_index << " 点动完成，当前位置: " 
               << m_curJoints[_joint_index] * 180.0f / M_PI << "度" << std::endl;
 }
 
-/* 笛卡尔空间点动（微动）*/
-void Robot::jogL(uint8_t axis, uint8_t _direction)
+/* 笛卡尔空间手动模式（寸动）*/
+void Robot::jogL(int mode, int axis, int _direction)
 {
     // 重置状态标志，开始新的运动
     GlobalParams::isStop = false;
     GlobalParams::isPause = false;
     GlobalParams::isResume = false;
 
-    std::cout << "jogL() - 轴: " << (int)axis << " 方向: " << (int)_direction << std::endl;
+    std::cout << "jogL() - 轴: " << axis << " 方向: " << _direction << std::endl;
 
     // 更新当前关节状态
     // updateJointStates();
@@ -1260,75 +1274,84 @@ void Robot::jogL(uint8_t axis, uint8_t _direction)
     
     // 点动参数设置
     const float linear_jog_distance = 30.0f;   // 线性轴点动距离 (mm)
-    const float angular_jog_distance = 30.0f;  // 角度轴点动距离 (度)
+    const float angular_jog_distance = 10.0f;  // 角度轴点动距离 (度)
     const float jog_speed = 30.0f;             // 点动速度
     
     // 计算目标位姿
     Kine6d target_pose = current_pose;
     
-    // 根据轴和方向设置目标位姿
-    float increment = 0.0f;
-    switch (axis) {
-        case 1:
-            increment = (_direction == 1) ? linear_jog_distance : -linear_jog_distance;
-            target_pose.X += increment;
-            std::cout << "jogL() - X轴移动 " << increment << "mm" << std::endl;
-            break;
-            
-        case 2:
-            increment = (_direction == 1) ? linear_jog_distance : -linear_jog_distance;
-            target_pose.Y += increment;
-            std::cout << "jogL() - Y轴移动 " << increment << "mm" << std::endl;
-            break;
-
-        case 3:
-            increment = (_direction == 1) ? linear_jog_distance : -linear_jog_distance;
-            target_pose.Z += increment;
-            std::cout << "jogL() - Z轴移动 " << increment << "mm" << std::endl;
-            break;
-            
-        case 4:
-            increment = (_direction == 1) ? angular_jog_distance : -angular_jog_distance;
-            target_pose.A += increment * M_PI / 180.0f;  // 转换为弧度
-            std::cout << "jogL() - A轴旋转 " << increment << "度" << std::endl;
-            break;
-            
-        case 5:
-            increment = (_direction == 1) ? angular_jog_distance : -angular_jog_distance;
-            target_pose.B += increment * M_PI / 180.0f;  // 转换为弧度
-            std::cout << "jogL() - B轴旋转 " << increment << "度" << std::endl;
-            break;
-            
-        case 6:  // Yaw轴（绕Z轴旋转）
-            increment = (_direction == 1) ? angular_jog_distance : -angular_jog_distance;
-            target_pose.C += increment * M_PI / 180.0f;  // 转换为弧度
-            std::cout << "jogL() - C轴旋转 " << increment << "度" << std::endl;
-            break;
-
+    if (mode == 0)          
+    {
+        printf("连续模式，暂未实现\n");
     }
-    
+    if (mode == 1)
+    {
+    // 根据轴和方向设置目标位姿
+        float increment = 0.0f;
+        switch (axis) {
+            case 1:
+                increment = (_direction == 1) ? linear_jog_distance : -linear_jog_distance;
+                target_pose.X += increment;
+                std::cout << "jogL() - X轴移动 " << increment << "mm" << std::endl;
+                break;
+                
+            case 2:
+                increment = (_direction == 1) ? linear_jog_distance : -linear_jog_distance;
+                target_pose.Y += increment;
+                std::cout << "jogL() - Y轴移动 " << increment << "mm" << std::endl;
+                break;
+
+            case 3:
+                increment = (_direction == 1) ? linear_jog_distance : -linear_jog_distance;
+                target_pose.Z += increment;
+                std::cout << "jogL() - Z轴移动 " << increment << "mm" << std::endl;
+                break;
+                
+            case 4:
+                increment = (_direction == 1) ? angular_jog_distance : -angular_jog_distance;
+                target_pose.A += increment * M_PI / 180.0f;  // 转换为弧度
+                std::cout << "jogL() - A轴旋转 " << increment << "度" << std::endl;
+                break;
+                
+            case 5:
+                increment = (_direction == 1) ? angular_jog_distance : -angular_jog_distance;
+                target_pose.B += increment * M_PI / 180.0f;  // 转换为弧度
+                std::cout << "jogL() - B轴旋转 " << increment << "度" << std::endl;
+                break;
+                
+            case 6:  // Yaw轴（绕Z轴旋转）
+                increment = (_direction == 1) ? angular_jog_distance : -angular_jog_distance;
+                target_pose.C += increment * M_PI / 180.0f;  // 转换为弧度
+                std::cout << "jogL() - C轴旋转 " << increment << "度" << std::endl;
+                break;
+        }
+    } 
     // 构造目标位姿数组
     std::array<float, 6> target_pose_array = {
         target_pose.X, target_pose.Y, target_pose.Z,
         target_pose.A, target_pose.B, target_pose.C
     };
     
+    // std::cout << "target_pose.fR = " << target_pose.fgR << std::endl;
     std::cout << "jogL() - 目标位姿: X=" << target_pose.X 
               << " Y=" << target_pose.Y << " Z=" << target_pose.Z
               << " A=" << target_pose.A * 180.0f / M_PI
               << " B=" << target_pose.B * 180.0f / M_PI  
               << " C=" << target_pose.C * 180.0f / M_PI << std::endl;
-    
-    if (axis == 1 || axis == 2 || axis == 3)
+
+#if 0    
+    if (axis == 1 || axis == 2 || axis == 3 || axis == 4 || axis == 5 || axis == 6)
     {
         // 调用moveL函数执行笛卡尔空间运动
         moveL(target_pose_array, jog_speed);
     }
-    else if (axis == 4 || axis == 5 || axis == 6)
+    else if (axis == 7)
     {
         // 1. 逆解目标位姿各关节角度
         Kine6dSol q_sol;
-        classic6dofInvKine(&target_pose, m_curJoints.data(), &q_sol);
+        float q_last[6] = {0};
+        target_pose.fgR = 0;  // 确保fgR为0，避免影响逆解
+        classic6dofInvKine(&target_pose, q_last, &q_sol);
 
         // 2. 选择最优逆解（距离当前关节位置最近且在限位范围内）
         bool valid[8];
@@ -1373,9 +1396,9 @@ void Robot::jogL(uint8_t axis, uint8_t _direction)
             std::cerr << "jogL() - 未找到有效逆解，无法执行姿态点动！" << std::endl;
         }
     }
-    
+#endif    
     // 调用moveL函数执行笛卡尔空间运动
-    // moveL(target_pose_array, jog_speed);
+    moveL(target_pose_array, jog_speed);
     
     // 更新当前关节状态
     // updateJointStates();
@@ -1561,7 +1584,6 @@ void Robot::handleHighPriorityCommand(const HighLevelCommand &_cmd)
     default:
         break;
     }
-
 }
 
 
@@ -1630,26 +1652,27 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
         
         case HighLevelCommandType::JogJ:
         {
-            uint8_t model = cmd.jogj_params.model;
-            uint8_t joint_index = cmd.jogj_params.joint_index;
-            uint8_t direction = cmd.jogj_params.direction;
+            int mode = cmd.jogj_params.mode;
+            int joint_index = cmd.jogj_params.joint_index;
+            int direction = cmd.jogj_params.direction;
 
-            std::cout << "JogJ - " << (model == 1 ? "连续" : "微动") << " 关节" << (int)joint_index << " 方向: " << (int)direction << std::endl;
+            std::cout << "JogJ - " << (mode == 1 ? "连续" : "微动") << " 关节" << joint_index << " 方向: " << direction << std::endl;
 
             updateJointStates();
-            jogJ(model, joint_index, direction);
+            jogJ(mode, joint_index, direction);
             updateJointStates();
             break;
         }
 
         case HighLevelCommandType::JogL:
         {
-            uint8_t axis = cmd.jogl_params.axis;
-            uint8_t direction = cmd.jogl_params.direction;
+            int mode = cmd.jogl_params.mode;
+            int axis = cmd.jogl_params.axis;
+            int direction = cmd.jogl_params.direction;
 
-            std::cout << "JogL - 轴" << (int)axis << " 方向: " << (int)direction << std::endl;
+            std::cout << "JogL - 轴" << axis << " 方向: " << direction << std::endl;
             // updateJointStates();
-            jogL(axis, direction);
+            jogL(mode, axis, direction);
             // updateJointStates();
             break;
         }
