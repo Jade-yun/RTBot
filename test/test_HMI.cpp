@@ -39,6 +39,7 @@ int main() {
         std::cout << "Use j<mode><joint_index><direction> for JogJ (mode:0连续,1微动; joint_index:0-5; direction:1正向,0负向)\n";
         std::cout << "Use l<mode><axis><direction> for JogL (mode:0连续,1微动; axis:1-6; direction:1正向,0负向)\n";
         std::cout << "---------------COMMON----------------\n";
+        std::cout << "Use #(x,x,x,x,x,x),(x,x,x,x,x,x),speed for MoveC\n";
         std::cout << "Use p to Pause\n";
         std::cout << "Use r to Resume\n";
         std::cout << "Use q to stop\n";
@@ -63,6 +64,32 @@ int main() {
             index++;
             cmd.command_type = HighLevelCommandType::Homing;
             cmd.command_index = index;
+        }
+        else if (cmd_str[0] == '#')
+        {
+            float pose_mid[6];
+            float pose_end[6];
+            float speed;
+            argNum = sscanf(cmd_str.c_str(), "#(%f,%f,%f,%f,%f,%f),(%f,%f,%f,%f,%f,%f),%f ",
+                            pose_mid, pose_mid + 1, pose_mid + 2,pose_mid + 3, pose_mid + 4, pose_mid + 5,
+                            pose_end, pose_end + 1, pose_end + 2,pose_end + 3, pose_end + 4, pose_end + 5,
+                            &speed);
+
+            if (argNum != 13)
+            {
+                std::cout << "moveC input error!\n";
+                continue;
+            }
+
+            index++;
+            cmd.command_type = HighLevelCommandType::MoveC;
+            cmd.command_index = index;
+
+            ::memcpy(cmd.movec_params.via_pose, pose_mid, sizeof(float) * NUM_JOINTS);
+            ::memcpy(cmd.movec_params.target_pose, pose_end, sizeof(float) * NUM_JOINTS);
+
+            cmd.movec_params.velocity = speed;
+
         }
         else if (cmd_str[0] == '>')
         {
