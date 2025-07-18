@@ -125,6 +125,20 @@ struct HighLevelCommand {
             float acceleration;
         } movecf_params;
 
+        // 关节点动
+        struct {
+            int mode;          // 模式 '0' 连续点动, '1' 微动
+            int joint_index;  // 关节索引 (0-5)
+            int direction;       // 方向 ('1'正向 或 '0'负向)
+        } jogj_params;
+
+        // 笛卡尔点动
+        struct {
+            int mode;          // 模式 '0' 连续点动, '1' 微动
+            int axis;
+            int direction;
+        } jogl_params;
+
         struct {
             float target_joint_pos[NUM_JOINTS];
             float gain;
@@ -165,20 +179,6 @@ struct HighLevelCommand {
         struct {
             uint32_t wait_time_ms;
         } wait_params;
-        
-        // 关节点动
-        struct {
-            int mode;          // 模式 '0' 连续点动, '1' 微动
-            int joint_index;  // 关节索引 (0-5)
-            int direction;       // 方向 ('1'正向 或 '0'负向)
-        } jogj_params;
-
-        // 笛卡尔点动
-        struct {
-            int mode;          // 模式 '0' 连续点动, '1' 微动
-            int axis;
-            int direction;
-        } jogl_params;
     };
 };
 

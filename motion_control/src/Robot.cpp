@@ -1578,6 +1578,11 @@ void Robot::moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_
     
 }
 
+void Robot::moveCF(std::array<float, NUM_JOINTS> pose1, std::array<float, NUM_JOINTS> pose2, float speed)
+{
+    
+}
+
 /* 关节空间手动模式（连续和寸动）*/
 void Robot::jogJ(int _mode, int _joint_index, int _direction)
 {

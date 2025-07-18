@@ -35,11 +35,11 @@ int main() {
         std::cout << "----------------AUTO----------------\n";
         std::cout << "Use >x,x,x,x,x,x,speed for MoveJ (speed <= 25)\n";
         std::cout << "Use @x,x,x,x,x,x,speed for MoveL (speed <= 75)\n";
+        std::cout << "Use #(x,x,x,x,x,x),(x,x,x,x,x,x),speed for MoveC\n";        
         std::cout << "---------------MANUAL---------------\n";
         std::cout << "Use j<mode><joint_index><direction> for JogJ (mode:0连续,1微动; joint_index:0-5; direction:1正向,0负向)\n";
         std::cout << "Use l<mode><axis><direction> for JogL (mode:0连续,1微动; axis:1-6; direction:1正向,0负向)\n";
         std::cout << "---------------COMMON----------------\n";
-        std::cout << "Use #(x,x,x,x,x,x),(x,x,x,x,x,x),speed for MoveC\n";
         std::cout << "Use p to Pause\n";
         std::cout << "Use r to Resume\n";
         std::cout << "Use q to stop\n";
