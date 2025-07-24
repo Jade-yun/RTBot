@@ -128,7 +128,7 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
     //运动参数限制
     double limit_joint_amax = 100;       //关节空间运动时的最大加速度-最大力矩输出另外限制
     double limit_joint_jmax = 400;       //关节空间运动时的最大加加速度
-    double limit_joint_vmax = 25;      //关节空间指令设定的最大速度
+    double limit_joint_vmax = 20;      //关节空间指令设定的最大速度
     //结束标志
     bool interpol_finish = 0.0;         //插补结束
 
@@ -179,15 +179,15 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
 
     while(interpol_finish != true) 
     {
-#if 1  //检测停止暂停和继续
         // 检查停止和暂停状态
         if (GlobalParams::isStop) {
-            std::cout << "检测到停止指令，退出插补\n";
+            GlobalParams::isStop = false; // 重置停止标志
             // 平滑减速到停止
-            if (current_joint_v > 0.01) {  // 如果还有速度
+            // if (current_joint_v > 0.01) 
+            while(current_joint_v > 0.01)
+            {  // 如果还有速度
                 current_joint_j = -limit_joint_jmax;  // 使用最大减速度
                 current_joint_a = current_joint_a + current_joint_j * current_cycle_tim;
-                // 减速过程中加速度可以为负，不要强制设置为0
                 current_joint_v = current_joint_v + current_joint_a * current_cycle_tim;
                 if (current_joint_v < 0) current_joint_v = 0;  // 防止负速度
                 
@@ -205,7 +205,7 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
                 
                 continue;
             }
-            GlobalParams::isStop = false;
+            // GlobalParams::isStop = false;
             break;
         }
         
@@ -217,7 +217,6 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
             if (current_joint_v > 0.01) {  // 如果还有速度
                 current_joint_j = -(limit_joint_jmax * 0.5);  // 使用最大减速度
                 current_joint_a = current_joint_a + current_joint_j * current_cycle_tim;
-                // 减速过程中加速度可以为负，不要强制设置为0
                 current_joint_v = current_joint_v + current_joint_a * current_cycle_tim;
                 if (current_joint_v < 0) current_joint_v = 0;  // 防止负速度
                 
@@ -290,7 +289,7 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
                 std::cout << "剩余距离: " << remaining_distance << " 弧度\n";
             }
         }
-#endif       
+
         //加减速处理
         if(Speed_planning_step == 1) {
         //预测减速阶段
@@ -537,7 +536,9 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
         moveJoints(m_curJoints);
     }
     printf("当前角度：%f %f %f %f %f %f \n", m_curJoints[0], m_curJoints[1], m_curJoints[2], m_curJoints[3], m_curJoints[4], m_curJoints[5] );
-    printf("当前位姿： \n");
+    Kine6d cur_pose;
+    classic6dofForKine(m_curJoints.data(), &cur_pose);
+    printf("当前位姿：%f %f %f %f %f %f \n", cur_pose.X, cur_pose.Y, cur_pose.Z, cur_pose.A, cur_pose.B, cur_pose.C);
 }
 
 /* 笛卡尔空间直线插补 */
@@ -609,7 +610,64 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
 
     classic6dofForKine(m_curJoints.data(), &start_pose);//初始位姿 正解获取
     end_pose = {_pose[0], _pose[1], _pose[2],_pose[3], _pose[4], _pose[5], {0}, 0};//目标位姿 自行设定
-    
+
+    //直接先判断逆解得到的角度 正解得到的位姿是否与目标位姿相同
+    Kine6dSol q_sol_f;
+    classic6dofInvKine(&end_pose, m_curJoints.data(), &q_sol_f);
+    bool valid[8];
+    int validCnt = 0;
+    for (int i = 0; i < 8; i++) {
+        valid[i] = true;
+        for (int j = 0; j < NUM_JOINTS; j++) {
+            if (q_sol_f.sol[i][j] > m_angleLimitMax[j] || q_sol_f.sol[i][j] < m_angleLimitMin[j]) {
+                valid[i] = false;
+                break;
+            }
+        }
+        if (valid[i]) validCnt++;
+    }
+    if (validCnt > 0) 
+    {
+        // 选择距离当前关节位置最近的解
+        float minDist = std::numeric_limits<float>::max();
+        int bestIndex = -1;
+        for (int i = 0; i < 8; i++) 
+        {
+            if (!valid[i]) continue;
+
+            float dist = 0.0f;
+            for (int j = 0; j < NUM_JOINTS; j++)
+            {
+                float d = m_curJoints[j] - q_sol_f.sol[i][j];
+                dist += d * d;
+            }
+
+            if (dist < minDist) {
+                minDist = dist;
+                bestIndex = i;
+            }
+        }
+        if (bestIndex >= 0) 
+        {
+            std::array<float, NUM_JOINTS> joint_f;
+            for (int i = 0; i < NUM_JOINTS; i++) 
+            {
+                joint_f[i] = q_sol_f.sol[bestIndex][i];//单位弧度
+            }
+            classic6dofForKine(joint_f.data(), &end_pose); //正解判断结束位姿是否等于输入的目标位姿
+            if (fabs(end_pose.X - _pose[0]) > 1e-3 || fabs(end_pose.Y - _pose[1]) > 1e-3 || fabs(end_pose.Z - _pose[2]) > 1e-3) {
+                std::cerr << "目标点超出工作空间!" << std::endl;
+                return; // 如果逆解验证失败，直接返回 
+            }
+        } 
+    }
+    else
+    {
+        std::cerr << "No valid solution found!" << std::endl;
+        return;
+    }
+
+
     double cartesian_dist = std::sqrt(
         std::pow(end_pose.X - start_pose.X, 2) +
         std::pow(end_pose.Y - start_pose.Y, 2) +
@@ -637,13 +695,11 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
     limit_cartesian_vmax = _speed * m_SpeedRatio; //实际再多乘个比例系数
     Speed_planning_step = 1;   //开始插补
 
-
     /*----------带预测减速的S型速度规划----------*/
     while(interpol_finish != true) 
     {
         // 检查停止和暂停状态
         if (GlobalParams::isStop) {
-            std::cout << "检测到停止指令，退出直线插补\n";
             // 平滑减速到停止
             if (current_cartesian_v > 0.01) {  // 如果还有速度
                 current_cartesian_j = -limit_cartesian_jmax;  // 使用最大减速度
@@ -1128,7 +1184,18 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
                     bestIndex = i;
                 }
             }
-
+            //防止所有解的角度都变化过大
+            if (fabs(q_sol.sol[bestIndex][0] - m_curJoints[0]) > 0.1 ||
+                fabs(q_sol.sol[bestIndex][1] - m_curJoints[1]) > 0.1 ||
+                fabs(q_sol.sol[bestIndex][2] - m_curJoints[2]) > 0.1 ||
+                fabs(q_sol.sol[bestIndex][3] - m_curJoints[3]) > 0.1 ||
+                fabs(q_sol.sol[bestIndex][4] - m_curJoints[4]) > 0.1 ||
+                fabs(q_sol.sol[bestIndex][5] - m_curJoints[5]) > 0.1)
+            {
+                std::cerr << "关节角度变化过大，退出插补！" << std::endl;
+                return; // 如果角度变化过大，直接返回
+            }
+            
             if (bestIndex >= 0) 
             {
                 std::array<float, NUM_JOINTS> targetJoints;
@@ -1137,12 +1204,12 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
                     targetJoints[i] = q_sol.sol[bestIndex][i];//单位弧度
                 }
 
-                printf("moveL, current joints: ");
-                for (int i = 0; i < NUM_JOINTS; i++)
-                {
-                    std::cout << targetJoints[i] << " ";
-                }
-                std::cout << "\n";
+                // printf("moveL, current joints: ");
+                // for (int i = 0; i < NUM_JOINTS; i++)
+                // {
+                //     std::cout << targetJoints[i] << " ";
+                // }
+                // std::cout << "\n";
 
                 //更新状态以进行下一次迭代
                 m_curJoints = targetJoints;
@@ -1154,9 +1221,16 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
                 std::cerr << "No valid solution found!" << std::endl;
             }
         }
+        else
+        {
+            std::cerr << "No valid solution found!" << std::endl;
+            return;
+        }
     }
     printf("当前角度：%f %f %f %f %f %f \n", m_curJoints[0], m_curJoints[1], m_curJoints[2], m_curJoints[3], m_curJoints[4], m_curJoints[5]);
-    printf("当前位姿： \n");
+    Kine6d cur_pose;
+    classic6dofForKine(m_curJoints.data(), &cur_pose);
+    printf("当前位姿：%f %f %f %f %f %f \n", cur_pose.X, cur_pose.Y, cur_pose.Z, cur_pose.A, cur_pose.B, cur_pose.C);
 }
 
 /*笛卡尔空间圆弧插补*/
@@ -1590,11 +1664,9 @@ void Robot::jogJ(int _mode, int _joint_index, int _direction)
     GlobalParams::isStop = false;
     GlobalParams::isPause = false;
     GlobalParams::isResume = false;
-    
-    std::cout << "jogJ() - 关节" << _joint_index << " 方向: " << _direction << std::endl;
-    
+        
     // 更新当前关节状态
-    updateJointStates();
+    // updateJointStates();
     
     // 点动速度设置
     const float jog_speed = 10.0f;  // 点动速度 (度/秒)
@@ -1622,7 +1694,7 @@ void Robot::jogJ(int _mode, int _joint_index, int _direction)
             float limit_max_deg = joint_limit_max * 180.0f / M_PI;
             
             if (current_pos_deg >= limit_max_deg - 0.1f) {
-                std::cout << "jogJ() - 关节" << _joint_index << " 已在上限位附近，无需点动" << std::endl;
+                std::cout << "jogJ - 关节" << _joint_index << " 已在上限位附近，无需点动" << std::endl;
                 return;
             }
         } else {
@@ -1633,7 +1705,7 @@ void Robot::jogJ(int _mode, int _joint_index, int _direction)
             float limit_min_deg = joint_limit_min * 180.0f / M_PI;
             
             if (current_pos_deg <= limit_min_deg + 0.1f) {
-                std::cout << "jogJ() - 关节" << _joint_index << " 已在下限位附近，无需点动" << std::endl;
+                std::cout << "jogJ - 关节" << _joint_index << " 已在下限位附近，无需点动" << std::endl;
                 return;
             }
         }
@@ -1650,7 +1722,7 @@ void Robot::jogJ(int _mode, int _joint_index, int _direction)
             float limit_max_deg = joint_limit_max * 180.0f / M_PI;
             
             if (current_pos_deg >= limit_max_deg - 0.1f) {
-                std::cout << "jogJ() - 关节" << _joint_index << " 已在上限位附近，无需点动" << std::endl;
+                std::cout << "jogJ - 关节" << _joint_index << " 已在上限位附近，无需点动" << std::endl;
                 return;
             }
         } else {
@@ -1661,7 +1733,7 @@ void Robot::jogJ(int _mode, int _joint_index, int _direction)
             float limit_min_deg = joint_limit_min * 180.0f / M_PI;
             
             if (current_pos_deg <= limit_min_deg + 0.1f) {
-                std::cout << "jogJ() - 关节" << _joint_index << " 已在下限位附近，无需点动" << std::endl;
+                std::cout << "jogJ - 关节" << _joint_index << " 已在下限位附近，无需点动" << std::endl;
                 return;
             }
         }
@@ -1676,9 +1748,9 @@ void Robot::jogJ(int _mode, int _joint_index, int _direction)
     moveJ(target_joints, jog_speed);
     
     // 更新当前关节状态
-    updateJointStates();
+    // updateJointStates();
     
-    std::cout << "jogJ() - 关节" << _joint_index << " 点动完成，当前位置: " 
+    std::cout << "jogJ - 关节" << _joint_index << " 点动完成，当前位置: " 
               << m_curJoints[_joint_index] * 180.0f / M_PI << "度" << std::endl;
 }
 
@@ -1689,8 +1761,6 @@ void Robot::jogL(int mode, int axis, int _direction)
     GlobalParams::isStop = false;
     GlobalParams::isPause = false;
     GlobalParams::isResume = false;
-
-    std::cout << "jogL() - 轴: " << axis << " 方向: " << _direction << std::endl;
 
     // 更新当前关节状态
     // updateJointStates();
@@ -1706,10 +1776,423 @@ void Robot::jogL(int mode, int axis, int _direction)
     
     // 计算目标位姿
     Kine6d target_pose = current_pose;
-    
+    float temp_dist = 0.0f;
+    bool _flag = false;
+    Kine6dSol _q;
+    Kine6d _pose;
     if (mode == 0)          
     {
-        printf("连续模式，暂未实现\n");
+        switch (axis)
+        {
+            case 1:
+            //直接给X轴工作空间最大限位，在这里循环判断，递增或递减目标位置的X值，直到不超出目标位置（误差10mm之内）
+                if (_direction == 1)
+                {
+                    target_pose.X = 850.0f;
+                    while(!_flag)
+                    {
+                        classic6dofInvKine(&target_pose, m_curJoints.data(), &_q);
+                        bool valid[8];
+                        int validCnt = 0;
+                        for (int i = 0; i < 8; i++) {
+                            valid[i] = true;
+                            for (int j = 0; j < NUM_JOINTS; j++) {
+                                if (_q.sol[i][j] > m_angleLimitMax[j] || _q.sol[i][j] < m_angleLimitMin[j]) {
+                                    valid[i] = false;
+                                    break;
+                                }
+                            }
+                            if (valid[i]) validCnt++;
+                        }
+                        if (validCnt > 0) 
+                        {
+                            // 选择距离当前关节位置最近的解
+                            float minDist = std::numeric_limits<float>::max();
+                            int bestIndex = -1;
+                            for (int i = 0; i < 8; i++) 
+                            {
+                                if (!valid[i]) continue;
+
+                                float dist = 0.0f;
+                                for (int j = 0; j < NUM_JOINTS; j++)
+                                {
+                                    float d = m_curJoints[j] - _q.sol[i][j];
+                                    dist += d * d;
+                                }
+
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    bestIndex = i;
+                                }
+                            }
+                            if (bestIndex >= 0) 
+                            {
+                                std::array<float, NUM_JOINTS> joint_f;
+                                for (int i = 0; i < NUM_JOINTS; i++) 
+                                {
+                                    joint_f[i] = _q.sol[bestIndex][i];//单位弧度
+                                }
+                                classic6dofForKine(joint_f.data(), &_pose); //正解判断结束位姿是否等于输入的目标位姿
+                                if (fabs(target_pose.X - _pose.X) > 1e-3 || fabs(target_pose.Y - _pose.Y) > 1e-3 || fabs(target_pose.Z - _pose.Z) > 1e-3) {
+                                    target_pose.X -= 10.0f; // 如果逆解验证失败，递减X轴位置
+                                }
+                                else
+                                {
+                                    _flag = true;
+                                }
+                            } 
+                        }
+                        else
+                        {
+                            std::cerr << "No valid solution found!" << std::endl;
+                            return;
+                        }
+                    }
+                }
+                    
+                if (_direction == 0)
+                {
+                    target_pose.X = -850.0f;
+                    while (!_flag)
+                    {   
+                        classic6dofInvKine(&target_pose, m_curJoints.data(), &_q);
+                        bool valid[8];
+                        int validCnt = 0;
+                        for (int i = 0; i < 8; i++) {
+                            valid[i] = true;
+                            for (int j = 0; j < NUM_JOINTS; j++) {
+                                if (_q.sol[i][j] > m_angleLimitMax[j] || _q.sol[i][j] < m_angleLimitMin[j]) {
+                                    valid[i] = false;
+                                    break;
+                                }
+                            }
+                            if (valid[i]) validCnt++;
+                        }
+                        if (validCnt > 0) 
+                        {
+                            // 选择距离当前关节位置最近的解
+                            float minDist = std::numeric_limits<float>::max();
+                            int bestIndex = -1;
+                            for (int i = 0; i < 8; i++) 
+                            {
+                                if (!valid[i]) continue;
+
+                                float dist = 0.0f;
+                                for (int j = 0; j < NUM_JOINTS; j++)
+                                {
+                                    float d = m_curJoints[j] - _q.sol[i][j];
+                                    dist += d * d;
+                                }
+
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    bestIndex = i;
+                                }
+                            }
+                            if (bestIndex >= 0) 
+                            {
+                                std::array<float, NUM_JOINTS> joint_f;
+                                for (int i = 0; i < NUM_JOINTS; i++) 
+                                {
+                                    joint_f[i] = _q.sol[bestIndex][i];//单位弧度
+                                }
+                                classic6dofForKine(joint_f.data(), &_pose); //正解判断结束位姿是否等于输入的目标位姿
+                                if (fabs(target_pose.X - _pose.X) > 1e-3 && fabs(target_pose.Y - _pose.Y) > 1e-3 && fabs(target_pose.Z - _pose.Z) > 1e-3) {
+                                    target_pose.X += 10.0f; // 如果逆解验证失败，递增X轴位置
+                                }
+                                else
+                                {
+                                    _flag = true;
+                                }
+                            } 
+                        }
+                        else
+                        {
+                            std::cerr << "No valid solution found!" << std::endl;
+                            return;
+                        }
+                    }
+                }
+                std::cout << "jogL - X轴移动 " << std::endl;
+                break;
+            case 2:
+            //直接给Y轴工作空间最大限位，在这里循环判断，递增或递减目标位置的Y值，直到不超出目标位置（误差10mm之内）
+                if (_direction == 1)
+                {
+                    target_pose.Y = 850.0f;
+                    while(!_flag)
+                    {
+                        classic6dofInvKine(&target_pose, m_curJoints.data(), &_q);
+                        bool valid[8];
+                        int validCnt = 0;
+                        for (int i = 0; i < 8; i++) {
+                            valid[i] = true;
+                            for (int j = 0; j < NUM_JOINTS; j++) {
+                                if (_q.sol[i][j] > m_angleLimitMax[j] || _q.sol[i][j] < m_angleLimitMin[j]) {
+                                    valid[i] = false;
+                                    break;
+                                }
+                            }
+                            if (valid[i]) validCnt++;
+                        }
+                        if (validCnt > 0) 
+                        {
+                            // 选择距离当前关节位置最近的解
+                            float minDist = std::numeric_limits<float>::max();
+                            int bestIndex = -1;
+                            for (int i = 0; i < 8; i++) 
+                            {
+                                if (!valid[i]) continue;
+
+                                float dist = 0.0f;
+                                for (int j = 0; j < NUM_JOINTS; j++)
+                                {
+                                    float d = m_curJoints[j] - _q.sol[i][j];
+                                    dist += d * d;
+                                }
+
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    bestIndex = i;
+                                }
+                            }
+                            if (bestIndex >= 0) 
+                            {
+                                std::array<float, NUM_JOINTS> joint_f;
+                                for (int i = 0; i < NUM_JOINTS; i++) 
+                                {
+                                    joint_f[i] = _q.sol[bestIndex][i];//单位弧度
+                                }
+                                classic6dofForKine(joint_f.data(), &_pose); //正解判断结束位姿是否等于输入的目标位姿
+                                if (fabs(target_pose.X - _pose.X) > 1e-3 || fabs(target_pose.Y - _pose.Y) > 1e-3 || fabs(target_pose.Z - _pose.Z) > 1e-3) {
+                                    target_pose.Y -= 10.0f; // 如果逆解验证失败，递减Y轴位置
+                                }
+                                else
+                                {
+                                    _flag = true;
+                                }
+                            } 
+                        }
+                        else
+                        {
+                            std::cerr << "No valid solution found!" << std::endl;
+                            return;
+                        }
+                    }
+                }
+                    
+                if (_direction == 0)
+                {
+                    target_pose.Y = -850.0f;
+                    while (!_flag)
+                    {   
+                        classic6dofInvKine(&target_pose, m_curJoints.data(), &_q);
+                        bool valid[8];
+                        int validCnt = 0;
+                        for (int i = 0; i < 8; i++) {
+                            valid[i] = true;
+                            for (int j = 0; j < NUM_JOINTS; j++) {
+                                if (_q.sol[i][j] > m_angleLimitMax[j] || _q.sol[i][j] < m_angleLimitMin[j]) {
+                                    valid[i] = false;
+                                    break;
+                                }
+                            }
+                            if (valid[i]) validCnt++;
+                        }
+                        if (validCnt > 0) 
+                        {
+                            // 选择距离当前关节位置最近的解
+                            float minDist = std::numeric_limits<float>::max();
+                            int bestIndex = -1;
+                            for (int i = 0; i < 8; i++) 
+                            {
+                                if (!valid[i]) continue;
+
+                                float dist = 0.0f;
+                                for (int j = 0; j < NUM_JOINTS; j++)
+                                {
+                                    float d = m_curJoints[j] - _q.sol[i][j];
+                                    dist += d * d;
+                                }
+
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    bestIndex = i;
+                                }
+                            }
+                            if (bestIndex >= 0) 
+                            {
+                                std::array<float, NUM_JOINTS> joint_f;
+                                for (int i = 0; i < NUM_JOINTS; i++) 
+                                {
+                                    joint_f[i] = _q.sol[bestIndex][i];//单位弧度
+                                }
+                                classic6dofForKine(joint_f.data(), &_pose); //正解判断结束位姿是否等于输入的目标位姿
+                                if (fabs(target_pose.X - _pose.X) > 1e-3 && fabs(target_pose.Y - _pose.Y) > 1e-3 && fabs(target_pose.Z - _pose.Z) > 1e-3) {
+                                    target_pose.Y += 10.0f; // 如果逆解验证失败，递增Y轴位置
+                                }
+                                else
+                                {
+                                    _flag = true;
+                                }
+                            } 
+                        }
+                        else
+                        {
+                            std::cerr << "No valid solution found!" << std::endl;
+                            return;
+                        }
+                    }
+                }
+                std::cout << "jogL - Y轴移动 " << std::endl;               
+                break;
+            case 3:
+            //直接给Z轴工作空间最大限位，在这里循环判断，递增或递减目标位置的Z值，直到不超出目标位置（误差10mm之内）
+                if (_direction == 1)
+                {
+                    target_pose.Z = 900.0f;
+                    while(!_flag)
+                    {
+                        classic6dofInvKine(&target_pose, m_curJoints.data(), &_q);
+                        bool valid[8];
+                        int validCnt = 0;
+                        for (int i = 0; i < 8; i++) {
+                            valid[i] = true;
+                            for (int j = 0; j < NUM_JOINTS; j++) {
+                                if (_q.sol[i][j] > m_angleLimitMax[j] || _q.sol[i][j] < m_angleLimitMin[j]) {
+                                    valid[i] = false;
+                                    break;
+                                }
+                            }
+                            if (valid[i]) validCnt++;
+                        }
+                        if (validCnt > 0) 
+                        {
+                            // 选择距离当前关节位置最近的解
+                            float minDist = std::numeric_limits<float>::max();
+                            int bestIndex = -1;
+                            for (int i = 0; i < 8; i++) 
+                            {
+                                if (!valid[i]) continue;
+
+                                float dist = 0.0f;
+                                for (int j = 0; j < NUM_JOINTS; j++)
+                                {
+                                    float d = m_curJoints[j] - _q.sol[i][j];
+                                    dist += d * d;
+                                }
+
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    bestIndex = i;
+                                }
+                            }
+                            if (bestIndex >= 0) 
+                            {
+                                std::array<float, NUM_JOINTS> joint_f;
+                                for (int i = 0; i < NUM_JOINTS; i++) 
+                                {
+                                    joint_f[i] = _q.sol[bestIndex][i];//单位弧度
+                                }
+                                classic6dofForKine(joint_f.data(), &_pose); //正解判断结束位姿是否等于输入的目标位姿
+                                if (fabs(target_pose.X - _pose.X) > 1e-3 || fabs(target_pose.Y - _pose.Y) > 1e-3 || fabs(target_pose.Z - _pose.Z) > 1e-3) {
+                                    target_pose.Z -= 10.0f; // 如果逆解验证失败，递减Z轴位置
+                                }
+                                else
+                                {
+                                    _flag = true;
+                                }
+                            } 
+                        }
+                        else
+                        {
+                            std::cerr << "No valid solution found!" << std::endl;
+                            return;
+                        }
+                    }
+                }
+                    
+                if (_direction == 0)
+                {
+                    target_pose.Z = -700.0f;
+                    while (!_flag)
+                    {   
+                        classic6dofInvKine(&target_pose, m_curJoints.data(), &_q);
+                        bool valid[8];
+                        int validCnt = 0;
+                        for (int i = 0; i < 8; i++) {
+                            valid[i] = true;
+                            for (int j = 0; j < NUM_JOINTS; j++) {
+                                if (_q.sol[i][j] > m_angleLimitMax[j] || _q.sol[i][j] < m_angleLimitMin[j]) {
+                                    valid[i] = false;
+                                    break;
+                                }
+                            }
+                            if (valid[i]) validCnt++;
+                        }
+                        if (validCnt > 0) 
+                        {
+                            // 选择距离当前关节位置最近的解
+                            float minDist = std::numeric_limits<float>::max();
+                            int bestIndex = -1;
+                            for (int i = 0; i < 8; i++) 
+                            {
+                                if (!valid[i]) continue;
+
+                                float dist = 0.0f;
+                                for (int j = 0; j < NUM_JOINTS; j++)
+                                {
+                                    float d = m_curJoints[j] - _q.sol[i][j];
+                                    dist += d * d;
+                                }
+
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    bestIndex = i;
+                                }
+                            }
+                            if (bestIndex >= 0) 
+                            {
+                                std::array<float, NUM_JOINTS> joint_f;
+                                for (int i = 0; i < NUM_JOINTS; i++) 
+                                {
+                                    joint_f[i] = _q.sol[bestIndex][i];//单位弧度
+                                }
+                                classic6dofForKine(joint_f.data(), &_pose); //正解判断结束位姿是否等于输入的目标位姿
+                                if (fabs(target_pose.X - _pose.X) > 1e-3 && fabs(target_pose.Y - _pose.Y) > 1e-3 && fabs(target_pose.Z - _pose.Z) > 1e-3) {
+                                    target_pose.Z += 10.0f; // 如果逆解验证失败，递增Z轴位置
+                                }
+                                else
+                                {
+                                    _flag = true;
+                                }
+                            } 
+                        }
+                        else
+                        {
+                            std::cerr << "No valid solution found!" << std::endl;
+                            return;
+                        }
+                    }
+                }
+                std::cout << "jogL - Z轴移动 " << std::endl;
+                break;
+            case 4:
+                target_pose.A = (_direction == 1) ? (175.0f * M_PI / 180.0f) : -(175.0f * M_PI / 180.0f);
+                std::cout << "jogL - A轴旋转 " << std::endl; 
+                break;
+            case 5:
+                //Pitch俯仰角在接近正负90度和正负180度时姿态奇异，所以这里先限定到正负85度
+                target_pose.B = (_direction == 1) ? (85.0f * M_PI / 180.0f) : -(85.0f * M_PI / 180.0f);
+                std::cout << "jogL - B轴旋转 " << std::endl; 
+                break;
+            case 6:
+                target_pose.C = (_direction == 1) ? (175.0f * M_PI / 180.0f) : -(175.0f * M_PI / 180.0f);
+                std::cout << "jogL - C轴旋转 " << std::endl; 
+                break;
+            default:
+                break;
+        }
     }
     if (mode == 1)
     {
@@ -1719,37 +2202,37 @@ void Robot::jogL(int mode, int axis, int _direction)
             case 1:
                 increment = (_direction == 1) ? linear_jog_distance : -linear_jog_distance;
                 target_pose.X += increment;
-                std::cout << "jogL() - X轴移动 " << increment << "mm" << std::endl;
+                std::cout << "jogL - X轴移动 " << increment << "mm" << std::endl;
                 break;
                 
             case 2:
                 increment = (_direction == 1) ? linear_jog_distance : -linear_jog_distance;
                 target_pose.Y += increment;
-                std::cout << "jogL() - Y轴移动 " << increment << "mm" << std::endl;
+                std::cout << "jogL - Y轴移动 " << increment << "mm" << std::endl;
                 break;
 
             case 3:
                 increment = (_direction == 1) ? linear_jog_distance : -linear_jog_distance;
                 target_pose.Z += increment;
-                std::cout << "jogL() - Z轴移动 " << increment << "mm" << std::endl;
+                std::cout << "jogL - Z轴移动 " << increment << "mm" << std::endl;
                 break;
                 
             case 4:
                 increment = (_direction == 1) ? angular_jog_distance : -angular_jog_distance;
                 target_pose.A += increment * M_PI / 180.0f;  // 转换为弧度
-                std::cout << "jogL() - A轴旋转 " << increment << "度" << std::endl;
+                std::cout << "jogL - A轴旋转 " << increment << "度" << std::endl;
                 break;
                 
             case 5:
                 increment = (_direction == 1) ? angular_jog_distance : -angular_jog_distance;
                 target_pose.B += increment * M_PI / 180.0f;  // 转换为弧度
-                std::cout << "jogL() - B轴旋转 " << increment << "度" << std::endl;
+                std::cout << "jogL - B轴旋转 " << increment << "度" << std::endl;
                 break;
                 
             case 6:  // Yaw轴（绕Z轴旋转）
                 increment = (_direction == 1) ? angular_jog_distance : -angular_jog_distance;
                 target_pose.C += increment * M_PI / 180.0f;  // 转换为弧度
-                std::cout << "jogL() - C轴旋转 " << increment << "度" << std::endl;
+                std::cout << "jogL - C轴旋转 " << increment << "度" << std::endl;
                 break;
         }
     } 
@@ -1760,7 +2243,7 @@ void Robot::jogL(int mode, int axis, int _direction)
     };
     
     // std::cout << "target_pose.fR = " << target_pose.fgR << std::endl;
-    std::cout << "jogL() - 目标位姿: X=" << target_pose.X 
+    std::cout << "jogL - 目标位姿: X=" << target_pose.X 
               << " Y=" << target_pose.Y << " Z=" << target_pose.Z
               << " A=" << target_pose.A * 180.0f / M_PI
               << " B=" << target_pose.B * 180.0f / M_PI  
@@ -1820,7 +2303,7 @@ void Robot::jogL(int mode, int axis, int _direction)
             moveJ(targetJoints, 10);
         }
         else {
-            std::cerr << "jogL() - 未找到有效逆解，无法执行姿态点动！" << std::endl;
+            std::cerr << "jogL - 未找到有效逆解，无法执行姿态点动！" << std::endl;
         }
     }
 #endif    
@@ -1830,7 +2313,7 @@ void Robot::jogL(int mode, int axis, int _direction)
     // 更新当前关节状态
     // updateJointStates();
     
-    std::cout << "jogL() - 笛卡尔点动完成" << std::endl;
+    std::cout << "jogL - 笛卡尔点动完成" << std::endl;
 }
 
 void Robot::moveJoints(const std::array<float, NUM_JOINTS>& _joints)
@@ -1871,12 +2354,13 @@ void Robot::homing()
     GlobalParams::isResume = false;
     
     // 更新当前关节状态
-    updateJointStates();
+    // updateJointStates();
     
     // 执行回零运动
     moveJ(REST_JOINT, DEFAULT_JOINT_SPEED);
     
-    std::cout << "回零操作完成\n";
+    std::cout << "回零操作完成\n"<< std::endl;
+
 }
 
 void Robot::pause()
@@ -1984,6 +2468,11 @@ void Robot::handleHighPriorityCommand(const HighLevelCommand &_cmd)
     {
         std::cout << "Stop!\n";
         stop();
+        // 清空普通命令队列
+        HighLevelCommand dummy;
+        while (shm().cmd_queue.pop(dummy)) {
+            // 循环弹出直到队列为空
+        }
         break;
     }
     case HighLevelCommandType::Pause:
@@ -2023,7 +2512,7 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
     }
 
     switch (cmd.command_type)
-    {
+    {      
         case HighLevelCommandType::MoveJ:
         {
             std::array<float, NUM_JOINTS> pos;
@@ -2034,6 +2523,7 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
 
 //            updateJointStates();
             moveJ(pos, speed);
+            std::cout << std::endl;
             break;
         }
         case HighLevelCommandType::MoveL:
@@ -2047,7 +2537,7 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             // updateJointStates();
             moveL(pose, speed);
             // updateJointStates();
-
+            std::cout << std::endl;
             break;
         }
         case HighLevelCommandType::MoveC:
@@ -2064,39 +2554,25 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
 
             moveC(pose_mid, pose_end, speed);
             break;
-            
+        }
+        case HighLevelCommandType::MoveCF:
+        {
+            std::array<float, 6> pose1;
+            std::array<float, 6> pose2;
+            std::copy(std::begin(cmd.movecf_params.pose1),
+                    std::end(cmd.movecf_params.pose1),
+                    pose1.begin());
+            std::copy(std::begin(cmd.movecf_params.pose2),
+                    std::end(cmd.movecf_params.pose2),
+                    pose2.begin());
+            float speed = cmd.movecf_params.velocity;
+
+            moveCF(pose1, pose2, speed);
             break;
         }
-    case HighLevelCommandType::MoveCF:
-    {
-        std::array<float, 6> pose1;
-        std::array<float, 6> pose2;
-        std::copy(std::begin(cmd.movecf_params.pose1),
-                  std::end(cmd.movecf_params.pose1),
-                  pose1.begin());
-        std::copy(std::begin(cmd.movecf_params.pose2),
-                  std::end(cmd.movecf_params.pose2),
-                  pose2.begin());
-        float speed = cmd.movecf_params.velocity;
-
-        moveCF(pose1, pose2, speed);
-        break;
-    }
-
         case HighLevelCommandType::MoveP:
         {
-            int traj_index = cmd.movep_params.traj_index;
-            const auto &traj = shm().trajectory_pool[traj_index];
-
-            // for (uint32_t i = 0; i < traj.point_count; i++)
-            // {
-            //     std::array<float, NUM_JOINTS> pos;
-            //     std::memcpy(pos.data(), traj.points[i].joint_pos, sizeof(float) * NUM_JOINTS);
-
-            //     while 
-            //     moveJ(pos,);
-            // }
-
+            break;
         }
         case HighLevelCommandType::SetParm:
         {
@@ -2110,24 +2586,25 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             int joint_index = cmd.jogj_params.joint_index;
             int direction = cmd.jogj_params.direction;
 
-            std::cout << "JogJ - " << (mode == 1 ? "连续" : "微动") << " 关节" << joint_index << " 方向: " << direction << std::endl;
+            std::cout << "JogJ - " << (mode == 0 ? "连续" : "微动") << " 关节" << joint_index << " 方向: " << direction << std::endl;
 
-            updateJointStates();
+            // updateJointStates();
             jogJ(mode, joint_index, direction);
-            updateJointStates();
+            // updateJointStates();
+            std::cout << std::endl;
             break;
         }
-
         case HighLevelCommandType::JogL:
         {
             int mode = cmd.jogl_params.mode;
             int axis = cmd.jogl_params.axis;
             int direction = cmd.jogl_params.direction;
 
-            std::cout << "JogL - 轴" << axis << " 方向: " << direction << std::endl;
+            std::cout << "JogL - " << (mode == 0 ? "连续" : "微动") << " 轴" << axis << " 方向: " << direction << std::endl;
             // updateJointStates();
             jogL(mode, axis, direction);
             // updateJointStates();
+            std::cout << std::endl;
             break;
         }
         

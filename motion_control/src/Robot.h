@@ -40,6 +40,7 @@ public:
     void updatePose();
     void updateJointStates();
     // void updateJointStatesCallback();
+    bool isPoseInWorkspace(const std::array<float, 6>& pose);
 
 
     // void handleHMICommand(const HighLevelCommand& _cmd);
@@ -53,11 +54,6 @@ private:
     void handleNormalCommand(const HighLevelCommand& cmd);
     void handleParameterOrder(const HighLevelCommand& _cmd);
     
-    // 速度规划函数
-    bool executeSpeedPlanning(double& current_joint_v, double& current_joint_a, double& current_joint_j,
-                             double& current_joint_l, double& current_joint_suml,
-                             double sum_joint_l, double limit_joint_vmax, double limit_joint_amax, double limit_joint_jmax,
-                             char& Speed_planning_step, double current_cycle_tim);
 
 public:
     const std::array<float, NUM_JOINTS> REST_JOINT = {0, 0, 0, 0, 0, 0};
@@ -97,6 +93,14 @@ public:
     std::array<float, NUM_JOINTS> m_AxisAccAccMax;
     // 关节柔性系数
     std::array<float, NUM_JOINTS> m_JointCompliance;
+
+    //工作空间限制
+    float m_workspaceLimitMaxX = 850.0f;
+    float m_workspaceLimitMinX = -850.0f;
+    float m_workspaceLimitMaxY = 850.0f;
+    float m_workspaceLimitMinY = -850.0f;
+    float m_workspaceLimitMaxZ = 900.0f;
+    float m_workspaceLimitMinZ = -700.0f;
 
     // 加速度倍率
     float m_AccRatio = 1;

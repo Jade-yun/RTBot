@@ -33,9 +33,9 @@ int main() {
 
         std::cout << "=== Robot Command Line Interface ===\n";
         std::cout << "----------------AUTO----------------\n";
-        std::cout << "Use >x,x,x,x,x,x,speed for MoveJ (speed <= 25)\n";
-        std::cout << "Use @x,x,x,x,x,x,speed for MoveL (speed <= 75)\n";
-        std::cout << "Use #(x,x,x,x,x,x),(x,x,x,x,x,x),speed for MoveC\n";        
+        std::cout << "Use >x,x,x,x,x,x,speed for MoveJ (speed <= 20)\n";
+        std::cout << "Use @x,x,x,x,x,x,speed for MoveL (speed <= 70)\n";
+        std::cout << "Use #(x,x,x,x,x,x),(x,x,x,x,x,x),speed for MoveC (speed <= 70)\n";        
         std::cout << "---------------MANUAL---------------\n";
         std::cout << "Use j<mode><joint_index><direction> for JogJ (mode:0连续,1微动; joint_index:0-5; direction:1正向,0负向)\n";
         std::cout << "Use l<mode><axis><direction> for JogL (mode:0连续,1微动; axis:1-6; direction:1正向,0负向)\n";
@@ -101,10 +101,10 @@ int main() {
             
             if (argNum < 6) continue;
 
-            if (speed > 25)
+            if (speed > 20)
             {
-                std::cout << "输入速度超出限制,已将速度改为25!\n";
-                speed = 25;
+                std::cout << "输入速度超出限制,已将速度改为20!\n";
+                speed = 20;
             }
             
             // 转换为弧度
@@ -131,10 +131,10 @@ int main() {
 
             if (argNum < 6) continue;
 
-            if (speed > 75)
+            if (speed > 70)
             {
-                std::cout << "输入速度超出限制,已将速度改为75!\n";
-                speed = 75;
+                std::cout << "输入速度超出限制,已将速度改为70!\n";
+                speed = 70;
             }
 
             for (int i = 3; i < 6; i++)
