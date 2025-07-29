@@ -32,13 +32,20 @@ void Robot::init()
 {
     // shm = SharedMemoryManager<SharedMemoryData>(SharedMemoryManager<SharedMemoryData>::Attacher, true);
 
-    for (int i = 0; i < NUM_JOINTS; i++)
-    {
-        m_angleLimitMax[i] = M_PI;   // π 弧度 (180度)
-        m_angleLimitMin[i] = -M_PI;  // -π 弧度 (-180度)
-    }
+    m_angleLimitMax[0] = M_PI * 170.0f / 180.0f;
+    m_angleLimitMin[0] = -M_PI * 170.0f / 180.0f;
+    m_angleLimitMax[1] = M_PI_2;
+    m_angleLimitMin[1] = -M_PI_2;
+    m_angleLimitMax[2] = M_PI * 60.0f / 180.0f;
+    m_angleLimitMin[2] = -M_PI;
+    m_angleLimitMax[3] = M_PI *170.0f / 180.0f;
+    m_angleLimitMin[3] = -M_PI * 170.0f / 180.0f;
+    m_angleLimitMax[4] = M_PI * 120.0f / 180.0f;
+    m_angleLimitMin[4] = -M_PI * 120.0f / 180.0f;
+    m_angleLimitMax[5] = M_PI * 2.0f;
+    m_angleLimitMin[5] = -M_PI * 2.0f;
     
-    std::cout << "机器人初始化完成，关节限位设置为 ±180度 (±π弧度)" << std::endl;
+    std::cout << "机器人初始化完成" << std::endl;
 }
 
 void Robot::setEnable(bool _enabled)
@@ -128,7 +135,7 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
     //运动参数限制
     double limit_joint_amax = 100;       //关节空间运动时的最大加速度-最大力矩输出另外限制
     double limit_joint_jmax = 400;       //关节空间运动时的最大加加速度
-    double limit_joint_vmax = 20;      //关节空间指令设定的最大速度
+    double limit_joint_vmax = 20;       //关节空间指令设定的最大速度
     //结束标志
     bool interpol_finish = 0.0;         //插补结束
 
@@ -145,16 +152,6 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
     std::array<float, NUM_JOINTS> start_pos = m_curJoints;
     std::array<float, NUM_JOINTS> end_pos = _joint_pos; 
 
-
-    // //当前脉冲转换到弧度
-    // for(int i = 0; i < NUM_JOINTS; i++) 
-    // {
-    //     Start_PulseCounter[i] = m_curtotalpulse[i] - MINROBOTPOSITION;
-
-    //     //脉冲偏移调整
-    //     offsetPosition[i] = Start_PulseCounter[i] - Joint_Zero_Offset[i];
-    //     start_pos[i] = offsetPosition[i] * M_PI / 500000.0;
-    // }
 
     //求最大关节位移弧度
     for(int i = 0; i < NUM_JOINTS; i++)  
@@ -211,7 +208,6 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
         
         // 暂停处理
         if (GlobalParams::isPause) {
-            std::cout << "运动暂停中...\n";
             
             // 平滑减速到停止
             if (current_joint_v > 0.01) {  // 如果还有速度
@@ -520,8 +516,8 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed)
             Joint_Tar_pos[i] = start_pos[i] + (end_pos[i] - start_pos[i]) * interpol_propor;
             //判断位置是否在限制范围内
 
-            // montor_cmd.joint_pos[i] = Joint_Tar_pos[i] * 500000.0 / M_PI * 13.1072;   //关节角度转换到电机脉冲
-            //Axise_CurInterPulse[i] = Joint_Tar_pos[i] * 500000.0 / M_PI ;   //关节角度转换到电机脉冲
+            // montor_cmd.joint_pos[i] = Joint_Tar_pos[i] * 250000.0 / M_PI * 13.1072;   //关节角度转换到电机脉冲
+            //Axise_CurInterPulse[i] = Joint_Tar_pos[i] * 250000.0 / M_PI ;   //关节角度转换到电机脉冲
 
             //绝对位置转换为对应编码器位数
             //montor_cmd.joint_pos[i] = Axise_CurInterPulse[i] * 13.1072;
@@ -771,7 +767,6 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
         
         // 暂停处理
         if (GlobalParams::isPause) {
-            std::cout << "直线运动暂停中...\n";
             
             // 平滑减速到停止
             if (current_cartesian_v > 0.01) {  // 如果还有速度
@@ -1219,6 +1214,7 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed)
             else
             {
                 std::cerr << "No valid solution found!" << std::endl;
+                return;
             }
         }
         else
@@ -2326,7 +2322,7 @@ void Robot::moveJoints(const std::array<float, NUM_JOINTS>& _joints)
     
     for (int i = 0; i < NUM_JOINTS; i++)
     {
-        montor_cmd.joint_pos[i] = _joints[i] * (500000.0 / M_PI * 13.1072);   //关节角度转换到电机脉冲
+        montor_cmd.joint_pos[i] = _joints[i] * (250000.0 / M_PI * 13.1072);   //关节角度转换到电机脉冲
     }
 
     // 入队列
@@ -2342,6 +2338,10 @@ void Robot::moveJoints(const std::array<float, NUM_JOINTS>& _joints)
     }
 }
 
+bool Robot::isPoseInWorkspace(const std::array<float, 6>& pose)
+{
+    
+}
 
 void Robot::homing()
 {
@@ -2457,13 +2457,13 @@ void Robot::handleHighPriorityCommand(const HighLevelCommand &_cmd)
 {
     switch (_cmd.command_type)
     {
-    case HighLevelCommandType::Homing:
-        if (!GlobalParams::isMoving && !GlobalParams::isStop)
-        {
-            std::cout << "Homing!\n";
-            homing();
-        }
-        break;
+    // case HighLevelCommandType::Homing:
+    //     if (!GlobalParams::isMoving)
+    //     {
+    //         std::cout << "Homing!\n";
+    //         homing();
+    //     }
+    //     break;
     case HighLevelCommandType::Stop:
     {
         std::cout << "Stop!\n";
@@ -2512,7 +2512,16 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
     }
 
     switch (cmd.command_type)
-    {      
+    {    
+        case HighLevelCommandType::Homing:
+        {
+            if (!GlobalParams::isMoving)
+            {
+                std::cout << "Homing!\n";
+                homing();
+            }
+            break; 
+        }
         case HighLevelCommandType::MoveJ:
         {
             std::array<float, NUM_JOINTS> pos;
@@ -2607,7 +2616,6 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             std::cout << std::endl;
             break;
         }
-        
         default:
             break;
     }

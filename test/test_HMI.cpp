@@ -217,7 +217,6 @@ int main() {
 
         // 区分高优先级命令和普通命令
         bool isHighPriorityCmd = (cmd.command_type == HighLevelCommandType::Stop || 
-                                  cmd.command_type == HighLevelCommandType::Homing ||
                                   cmd.command_type == HighLevelCommandType::Pause ||
                                   cmd.command_type == HighLevelCommandType::Resume);
         

@@ -57,7 +57,7 @@ private:
 
 public:
     const std::array<float, NUM_JOINTS> REST_JOINT = {0, 0, 0, 0, 0, 0};
-    const float DEFAULT_JOINT_SPEED = 10;
+    const float DEFAULT_JOINT_SPEED = 20;
     // 当前关节位置
     std::array<float, NUM_JOINTS> m_curJoints = REST_JOINT;
     std::array<float, NUM_JOINTS> m_targetJoints = REST_JOINT;

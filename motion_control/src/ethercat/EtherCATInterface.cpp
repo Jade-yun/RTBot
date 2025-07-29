@@ -32,12 +32,12 @@ DynamicalModel model;
 
 #define TIMESPEC2NS(T) ((uint64_t)(T).tv_sec * NSEC_PER_SEC + (T).tv_nsec)
 
-constexpr int NUM_SLAVES = 2;
+constexpr int NUM_SLAVES = 6;
 
 uint32_t Joint_Zero_Offset[6] = {500000, 150000}; //记录偏移
 
 uint32_t SlaveVID[] = {0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7};
-uint32_t SlavePID[] = {0x005e0402, 0x006b0402, 0x005e0402, 0x005e0402, 0x005e0402, 0x005e0402};
+uint32_t SlavePID[] = {0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402};
 // #define PRODUCT_ID 0x005e0402, 0x006b0402, 0x006b0402;
 
 
@@ -622,10 +622,10 @@ void EtherCATInterface::runTask()
                 target_pos_pulse[i] = actual_pos_pulse[i];
                 break;
                 
-                /*
-                case (switched_on):
-                    EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x0f);
-                break;*/
+                
+            case (switched_on):
+                EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x0f);
+            break;
 
 //            case (operation_enable):
 //            {
@@ -643,11 +643,11 @@ void EtherCATInterface::runTask()
                 break;
             }
 
-            if (all_switched_on)
-            {//enable
+            // if (all_switched_on)
+            // {//enable
                 
-                EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x0f);
-            }
+            //     EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x0f);
+            // }
         }
     }
     else if (motor_start_flag == 0)
@@ -705,12 +705,12 @@ void EtherCATInterface::runTask()
         // 脉冲 -> 角度(弧度)
         double current_pos; 
         // current_pos = actual_pos_pulse[i] * robot.m_gearRatio[i] * (M_PI / 360.0f);
-        current_pos = actual_pos_pulse[i] / 500000.0 * (M_PI / 13.1072);
+        current_pos = actual_pos_pulse[i] / 250000.0 * (M_PI / 13.1072);
         cur_state.joint_state[i].position = current_pos;
-        cur_state.joint_state[i].velocity = actual_vel[i] / 500000.0 * (M_PI / 13.1072);
+        cur_state.joint_state[i].velocity = actual_vel[i] / 250000.0 * (M_PI / 13.1072);
         // cur_state.joint_state[i].torque = actual_torque[i]; 
 
-        if (abs(target_pos_pulse[i] - actual_pos_pulse[i]) <= 2)
+        if (abs(target_pos_pulse[i] - actual_pos_pulse[i]) <= 5)
         {
             cur_state.joint_state[i].motor_state = 0;
         }
@@ -773,15 +773,15 @@ void EtherCATInterface::check_slave_config_states(ec_slave_config_t *sc, int i)
     ecrt_slave_config_state(sc, &s);
     if (s.al_state != sc_state[i].al_state)
     {
-        printf("slave: State 0x%02X.\n", s.al_state);
+        printf("slave %d: State 0x%02X.\n", i, s.al_state);
     }
     if (s.online != sc_state[i].online)
     {
-        printf("slave: %s.\n", s.online ? "online" : "offline");
+        printf("slave %d: %s.\n", i, s.online ? "online" : "offline");
     }
     if (s.operational != sc_state[i].operational)
     {
-        printf("slave: %soperational.\n", s.operational ? "" : "Not ");
+        printf("slave %d: %soperational.\n",i, s.operational ? "" : "Not ");
     }
     sc_state[i] = s;
 }

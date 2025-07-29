@@ -74,7 +74,9 @@ int main()
 
     cpu_set_t mask;
     CPU_ZERO(&mask);
+    CPU_SET(2, &mask);  // 添加核心2
     CPU_SET(3, &mask);  // 添加核心2
+
 
     if (sched_setaffinity(0, sizeof(mask), &mask) == -1) {
         std::cerr << "Failed to set CPU affinity:" << strerror(errno);
