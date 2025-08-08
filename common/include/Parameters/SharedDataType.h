@@ -33,6 +33,7 @@ enum class HighLevelCommandType : uint8_t {
     Wait,     // 等待（Wait）
     JogJ,     // 关节点动（Jog Joint）
     JogL,     // 笛卡尔点动（Jog Linear）
+    TCPCalibration, // TCP标定指令
 };
 
 // 机械结构参数
@@ -101,6 +102,8 @@ struct HighLevelCommand {
             float target_joint_pos[NUM_JOINTS]; // 各关节角度
             float velocity;
             float acceleration;
+            float start_speed;
+            float end_speed;
         } movej_params;
 
         // 笛卡尔空间移动
@@ -108,6 +111,8 @@ struct HighLevelCommand {
             float target_pose[6]; // 末端位姿
             float velocity;
             float acceleration;
+            float startspeed;
+            float endspeed;
         } movel_params;
 
         // 圆弧插补移动
@@ -116,6 +121,8 @@ struct HighLevelCommand {
             float target_pose[6]; // 末端位姿
             float velocity;
             float acceleration;
+            float startspeed;
+            float endspeed;
         } movec_params;
 
         struct {

@@ -1,6 +1,8 @@
 #ifndef CLASSIC6DOFKINE_H_
 #define CLASSIC6DOFKINE_H_
 
+#include <array>
+#include <vector>
 
 enum Kine6dConfig {
 	RA_AE_UW,
@@ -30,5 +32,6 @@ struct Kine6dSol_ {
 void classic6dofForKine(float* q_, Kine6d* pose_);
 
 void classic6dofInvKine(Kine6d* pose_, float* q_last_, Kine6dSol* q_);
+
 
 #endif

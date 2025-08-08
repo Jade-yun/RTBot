@@ -5,6 +5,8 @@
 #include <string.h>
 #include <math.h>
 #include <iostream>
+#include <vector>
+#include <array>
 
 #define sqrtf(X) (float)sqrt(X)
 #define sinf(X) (float)sin(X)
@@ -13,6 +15,29 @@
 #define acosf(X) (float)acos(X)
 #define atanf(X) (float)atan(X)
 #define atan2f(Y, X) (float)atan2(Y, X)
+
+
+// #define CLASSIC6DOF_L_BS 170.0f
+// #define CLASSIC6DOF_L_SE 260.0f
+// #define CLASSIC6DOF_L_EW 242.0f
+// #define CLASSIC6DOF_D_EW 130.0f
+// #define CLASSIC6DOF_L_WT 80.0f
+
+// //const float RAD_TO_DEG = 57.295777754771045f;
+
+// static float classic6dof_DH[6][4] = {
+// 	{	0.0f,			CLASSIC6DOF_L_BS,	0.0f,				-(float)M_PI_2	},
+// 	{	-(float)M_PI_2,	0.0f,				CLASSIC6DOF_L_SE,	0.0f			},
+// 	{	(float)M_PI,	0.0f,				CLASSIC6DOF_D_EW,	(float)M_PI_2	},
+// 	{	0.0f,			CLASSIC6DOF_L_EW,	0.0f,				-(float)M_PI_2	},
+// 	{	0.0f,			0.0f,				0.0f,				(float)M_PI_2	},
+// 	{	0.0f,			CLASSIC6DOF_L_WT,	0.0f,				0.0f			}
+// }; // home, d, a, alpha
+// static float L1_bs[3] =	{	 0.0f,				-CLASSIC6DOF_L_BS,	0.0f				};
+// static float L2_se[3] = {	 CLASSIC6DOF_L_SE,	 0.0f,				0.0f				};
+// static float L3_ew[3] = { -CLASSIC6DOF_D_EW,	 0.0f,				CLASSIC6DOF_L_EW	};
+// static float L6_wt[3] = {	 0.0f,				 0.0f,				CLASSIC6DOF_L_WT	};
+
 
 
 #define CLASSIC6DOF_L_BS 100.0f
@@ -466,5 +491,3 @@ void classic6dofInvKine(Kine6d* pose_, float* q_last_, Kine6dSol* q_)
 	// 	}
 	// }
 }
-
-

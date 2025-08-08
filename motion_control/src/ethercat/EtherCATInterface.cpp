@@ -1,7 +1,7 @@
 // ethercat/EtherCATInterface.cpp
 
 #include <iostream>
-#include <unistd.h>        // sleep
+#include <unistd.h>        // sleep, usleep
 #include <string.h>        // memset
 #include <etherlab/ecrt.h> // IGH EtherCAT 主站API
 #include <signal.h>
@@ -32,12 +32,14 @@ DynamicalModel model;
 
 #define TIMESPEC2NS(T) ((uint64_t)(T).tv_sec * NSEC_PER_SEC + (T).tv_nsec)
 
-constexpr int NUM_SLAVES = 6;
+constexpr int NUM_SLAVES = 1;
+// constexpr int NUM_SLAVES = 6;
 
 uint32_t Joint_Zero_Offset[6] = {500000, 150000}; //记录偏移
 
 uint32_t SlaveVID[] = {0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7};
-uint32_t SlavePID[] = {0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402};
+// uint32_t SlavePID[] = {0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402};
+uint32_t SlavePID[] = {0x005e0402, 0x006b0402, 0x005e0402, 0x005e0402, 0x005e0402, 0x005e0402};
 // #define PRODUCT_ID 0x005e0402, 0x006b0402, 0x006b0402;
 
 
@@ -429,6 +431,7 @@ bool EtherCATInterface::init()
         return false;
     }
 
+
     return true;
 }
 
@@ -507,20 +510,20 @@ void EtherCATInterface::runTask()
     // 更新和发送过程数据
     ecrt_master_receive(master_);
     ecrt_domain_process(domain_);
+
     motor_start_flag = 1;
 
-    cycle_counter++;
-    if(!(cycle_counter % 500))
-    {
-        cycle_counter = 0;
+    // cycle_counter++;
+    // if(!(cycle_counter % 500))
+    // {
+        // cycle_counter = 0;
         check_domain_state();
         check_master_state();
         for(int i = 0; i < NUM_SLAVES; i++)
         {
             check_slave_config_states(slave_config[i], i);
         }
-    }
-
+    // }
     
 
     // read status word
@@ -530,14 +533,12 @@ void EtherCATInterface::runTask()
         state_value[i] = EC_READ_U16(domain_pd_ + offset.Status_Word[i]); // 读取电机状态字
     }
 
-    //printf("statue: %d\n", state_value[1]);
+    // printf("statue: %d %d %d %d %d %d\n", state_value[0],state_value[1],state_value[2],state_value[3],state_value[4],state_value[5]);
 
     cia402_state_t servo_state[NUM_SLAVES];
 
     bool all_switched_on = true;
     bool all_operation_enable = true;
-
-
 
     // 电机当前位置的脉冲值
     std::array<int32_t, NUM_SLAVES> actual_pos_pulse;
@@ -562,8 +563,10 @@ void EtherCATInterface::runTask()
     {
         // printf("Joint Current: %d %d\n", actual_pos_pulse[0], actual_pos_pulse[1]);   
         // printf("target pulse: %d %d\n",target_pos_pulse[0], target_pos_pulse[1]);
-        // printf("Joint Velocity: %d %d\n", actual_vel[0], actual_vel[1]); 
+        // printf("Joint Velocity: %d %d\n", actual_vel[0], actual_vel[1]);
+
         // printf("GlobalParams::isMoving: %d\n", GlobalParams::isMoving);
+        // printf("Joint Current: %d \n", actual_pos_pulse[0]);
   
         // printf("Joint Torque: %d %d\n", actual_torque[0], actual_torque[1]); 
 
@@ -571,8 +574,6 @@ void EtherCATInterface::runTask()
     }   
     print_cnt++;
 
-    // static std::array<signed int, NUM_SLAVES> target_pos_pulse;
-    // target_pos_pulse = actual_pos_pulse;
 
     if (all_operation_enable)
     {
@@ -585,18 +586,11 @@ void EtherCATInterface::runTask()
             {
 
                 target_pos_pulse[i] = montor_cmd.joint_pos[i];
-            }
-            // printf("Joint Current: %d %d\n", actual_pos_pulse[0], actual_pos_pulse[1]);   
-            // printf("Joint Velocity: %d %d\n", actual_vel[0], actual_vel[1]);   
+            } 
         }
         
         for (int i = 0; i < NUM_SLAVES; i++)
         {
-//            static int value[NUM_SLAVES] = {0};
-//            auto cur_value = (EC_READ_S32(domain_pd_ + offset.Position_Actual_Value[i]));
-//            EC_WRITE_U32(domain_pd_ + offset.Target_Position[i], cur_value + value[i]);
-//            value[i] += 0xff * print_cnt;
-
             // auto value = (EC_READ_S32(domain_pd_ + offset.Position_Actual_Value[i]));
             EC_WRITE_U32(domain_pd_ + offset.Target_Position[i], target_pos_pulse[i]);
         }
@@ -621,8 +615,6 @@ void EtherCATInterface::runTask()
                 EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x07);
                 target_pos_pulse[i] = actual_pos_pulse[i];
                 break;
-                
-                
             case (switched_on):
                 EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x0f);
             break;
@@ -683,19 +675,6 @@ void EtherCATInterface::runTask()
     update_master_clock();
 #endif
 
-
-    // uint32_t jointsStateFlag = 0;
-
-    // for(int i = 0; i < NUM_SLAVES; i++) 
-    // {
-    //     // 当实际脉冲和目标脉冲在正负2个脉冲值误差范围内时，认为已到达目标位置
-
-    //     if (abs(pos[i] - actual_pos_pulse[i]) <= 2)
-    //         jointsStateFlag |= (1 << i);
-    //     else
-    //         jointsStateFlag &= ~(1 << i);
-    // }
-
     // 传递电机状态 以供其他模块使用
     RobotState cur_state;
     bool moveFlag = false;
@@ -710,7 +689,7 @@ void EtherCATInterface::runTask()
         cur_state.joint_state[i].velocity = actual_vel[i] / 250000.0 * (M_PI / 13.1072);
         // cur_state.joint_state[i].torque = actual_torque[i]; 
 
-        if (abs(target_pos_pulse[i] - actual_pos_pulse[i]) <= 5)
+        if (abs(target_pos_pulse[i] - actual_pos_pulse[i]) <= 2)
         {
             cur_state.joint_state[i].motor_state = 0;
         }
@@ -719,8 +698,7 @@ void EtherCATInterface::runTask()
             cur_state.joint_state[i].motor_state = 1;
         }
         moveFlag = moveFlag || cur_state.joint_state[i].motor_state;
-        GlobalParams::isMoving = moveFlag;
-        
+        GlobalParams::isMoving = moveFlag; 
     }
 
     shm().state_buffer.write(cur_state);

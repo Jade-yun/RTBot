@@ -7,13 +7,7 @@
 #include "Parameters/SharedDataType.h"
 
 // === HMI 程序 ===
-// 
-// 点动功能使用示例：
-// 1. 输入 j0+ 启动关节0正向点动
-// 2. 输入 s 停止点动
-// 3. 输入 j1- 启动关节1负向点动
-// 4. 输入 s 停止点动
-//
+
 SharedMemoryManager<SharedMemoryData> shm(SharedMemoryManager<SharedMemoryData>::Attacher);
 
 int main() {
@@ -44,6 +38,7 @@ int main() {
         std::cout << "Use r to Resume\n";
         std::cout << "Use q to stop\n";
         std::cout << "Use h to Homing\n";
+        std::cout << "Use tcp to TCP Calibration\n";
         std::cout << "====================================\n\n";
 
         std::string cmd_str;
@@ -70,12 +65,14 @@ int main() {
             float pose_mid[6];
             float pose_end[6];
             float speed;
-            argNum = sscanf(cmd_str.c_str(), "#(%f,%f,%f,%f,%f,%f),(%f,%f,%f,%f,%f,%f),%f ",
+            float startspeed;
+            float endspeed;
+            argNum = sscanf(cmd_str.c_str(), "#(%f,%f,%f,%f,%f,%f),(%f,%f,%f,%f,%f,%f),%f,%f,%f",
                             pose_mid, pose_mid + 1, pose_mid + 2,pose_mid + 3, pose_mid + 4, pose_mid + 5,
                             pose_end, pose_end + 1, pose_end + 2,pose_end + 3, pose_end + 4, pose_end + 5,
-                            &speed);
+                            &speed, &startspeed, &endspeed);
 
-            if (argNum != 13)
+            if (argNum != 15)
             {
                 std::cout << "moveC input error!\n";
                 continue;
@@ -89,17 +86,21 @@ int main() {
             ::memcpy(cmd.movec_params.target_pose, pose_end, sizeof(float) * NUM_JOINTS);
 
             cmd.movec_params.velocity = speed;
+            cmd.movec_params.startspeed = startspeed;
+            cmd.movec_params.endspeed = endspeed;
 
         }
         else if (cmd_str[0] == '>')
         {
             float joints[6];
             float speed;
+            float startspeed;
+            float endspeed;
 
-            argNum = sscanf(cmd_str.c_str(), ">%f,%f,%f,%f,%f,%f,%f", joints, joints + 1, joints + 2,
-                            joints + 3, joints + 4, joints + 5, &speed);
+            argNum = sscanf(cmd_str.c_str(), ">%f,%f,%f,%f,%f,%f,%f,%f,%f", joints, joints + 1, joints + 2,
+                            joints + 3, joints + 4, joints + 5, &speed, &startspeed, &endspeed);
             
-            if (argNum < 6) continue;
+            if (argNum < 8) continue;
 
             if (speed > 20)
             {
@@ -120,22 +121,20 @@ int main() {
 
             ::memcpy(cmd.movej_params.target_joint_pos, joints, sizeof(float) * NUM_JOINTS); 
             cmd.movej_params.velocity = speed;
+            cmd.movej_params.start_speed = startspeed;
+            cmd.movej_params.end_speed = endspeed;
         } 
         else if (cmd_str[0] == '@')
         {
             float pose[6];
             float speed;
+            float startspeed;
+            float endspeed;
+            argNum = sscanf(cmd_str.c_str(), "@%f,%f,%f,%f,%f,%f,%f,%f,%f", pose, pose + 1, pose + 2,
+                            pose + 3, pose + 4, pose + 5, &speed, &startspeed, &endspeed);
 
-            argNum = sscanf(cmd_str.c_str(), "@%f,%f,%f,%f,%f,%f,%f", pose, pose + 1, pose + 2,
-                            pose + 3, pose + 4, pose + 5, &speed);
+            if (argNum < 8) continue;
 
-            if (argNum < 6) continue;
-
-            if (speed > 70)
-            {
-                std::cout << "输入速度超出限制,已将速度改为70!\n";
-                speed = 70;
-            }
 
             for (int i = 3; i < 6; i++)
             {
@@ -148,6 +147,8 @@ int main() {
 
             ::memcpy(cmd.movel_params.target_pose, pose, sizeof(float) * NUM_JOINTS);
             cmd.movel_params.velocity = speed;
+            cmd.movel_params.startspeed = startspeed;
+            cmd.movel_params.endspeed = endspeed;
         }
         else if (cmd_str[0] == 'p')
         {
@@ -209,6 +210,12 @@ int main() {
                 std::cout << "无效的笛卡尔点动命令格式！请使用 l<0/1><1/2/3/4/5/6><1/0> 格式\n";
                 continue;
             }
+        }
+        else if (cmd_str == "tcp")
+        {
+            index++;
+            cmd.command_type = HighLevelCommandType::TCPCalibration;
+            cmd.command_index = index;
         }
         else 
         {

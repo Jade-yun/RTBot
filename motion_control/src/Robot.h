@@ -2,10 +2,13 @@
 #define _ROBOT_H_
 
 #include <array>
+#include <vector>
 #include "Parameters/SharedDataType.h"
 #include "Utilities/SharedMemoryManager.h"
 //#include "kinematics/DOF6Kinematic.h"
 #include "kinematics/Classic6dofKine.h"
+#include <math.h>
+#include "velocityplanner/velocityplanner.h"  // 添加VelocityPlanner头文件
 
 #define PI (3.1415926)
 
@@ -24,18 +27,30 @@ public:
     void pause();
     void resume();
     void stop();
-    
-    // 
-    //void planMoveJ(const std::array<float, NUM_JOINTS>& _joint_pos);
-    void moveJ(const std::array<float, NUM_JOINTS>& _joint_pos, float _speed);
-    void moveL(std::array<float, NUM_JOINTS> _pose, float _speed);
-    void moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_JOINTS> end_pose, float speed);
+
+    // TCP标定相关方法
+    void calibrationTCP();          // 执行TCP标定流程
+    bool addTCPCalibrationPoint();  // 添加标定点
+    bool calculateTCP();            // 计算TCP位置
+    void clearTCPCalibrationData(); // 清除标定数据
+    bool isTCPCalibrationReady();   // 检查是否可以进行标定
+    std::array<float, 3> getTCPOffset() const; // 获取TCP位置偏移量
+    std::array<float, 3> getTCPRotation() const; // 获取TCP姿态偏移量
+    std::array<float, 6> getTCPPoseInBase() const; // 获取TCP相对于基坐标系的位姿
+    bool isTCPCalibrated() const;   // 检查TCP是否已标定
+    void testTCPCalibration();
+    bool addManualTCPCalibrationPoint(float x, float y, float z, float a, float b, float c);
+
+    //
+    void moveJ(const std::array<float, NUM_JOINTS>& joint_pos, float _speed, float _start_speed, float _end_speed);
+    void moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _start_speed, float _end_speed);
+    void moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_JOINTS> end_pose, float speed, float start_speed, float end_speed);
     void moveCF(std::array<float, NUM_JOINTS> pose1, std::array<float, NUM_JOINTS> pose2, float speed);
     void moveJoints(const std::array<float, NUM_JOINTS>& _joints);
     void jogJ(int _mode, int _joint_index, int _direction);
     void jogL(int _mode, int _axis, int _direction);
     // 设置速度
-    // void setSpeed(float _speed);
+    void setSpeed(float _speed);
     // 调用运动学正解，更新位姿
     void updatePose();
     void updateJointStates();
@@ -56,11 +71,15 @@ private:
     
 
 public:
+    // const std::array<float, NUM_JOINTS> REST_JOINT = {0, -(M_PI*10.0f/180.0f), (M_PI*100.0f/180.0f), 0, (M_PI*30.0f/180.0f), 0};
     const std::array<float, NUM_JOINTS> REST_JOINT = {0, 0, 0, 0, 0, 0};
+    // const std::array<float, NUM_JOINTS> REST_JOINT = {150.0f / 180.0f * M_PI, 45.0f / 180.0f * M_PI, 37.5f / 180.0f * M_PI, 0, 97.5f / 180.0f * M_PI, -30.0f / 180.0f * M_PI};
+
+
     const float DEFAULT_JOINT_SPEED = 20;
     // 当前关节位置
     std::array<float, NUM_JOINTS> m_curJoints = REST_JOINT;
-    std::array<float, NUM_JOINTS> m_targetJoints = REST_JOINT;
+    // std::array<float, NUM_JOINTS> m_targetJoints = REST_JOINT; 
 //    std::array<float, NUM_JOINTS> m_initPose = REST_JOINT;
     std::array<float, NUM_JOINTS> m_currentPose = {0};
     
@@ -124,16 +143,24 @@ public:
     // 编码器位数
     std::array<float, NUM_JOINTS> m_Encoderbit;
 
+    // TCP标定相关变量
+    std::vector<std::array<float, 6>> m_tcpCalibrationPoses; // 存储标定点的位姿 (X,Y,Z,A,B,C)
+    std::array<float, 3> m_tcpOffset = {0.0f, 0.0f, 0.0f};   // TCP位置偏移量 (相对于法兰中心)
+    std::array<float, 3> m_tcpRotation = {0.0f, 0.0f, 0.0f}; // TCP姿态偏移量 (相对于法兰坐标系)
+    bool m_tcpCalibrated = false;                             // TCP是否已标定
+
 private:
     bool enabled = false;
 
     float m_jointSpeed = DEFAULT_JOINT_SPEED;
-    //float m_cartesianSpeed = 10.0f; 
-//    std::array<float, NUM_JOINTS> m_dynamicJointSpeeds = {0};
 
-//    DOF6Kinematic* dof6Solver;
+    // 7段S型速度规划器实例
+    VelocityPlanner m_velocityPlanner;  // 主速度规划器，用于关节空间运动规划
 
 };
 
 
 #endif
+
+
+
