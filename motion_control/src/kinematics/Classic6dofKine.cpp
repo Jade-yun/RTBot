@@ -279,7 +279,7 @@ void classic6dofInvKine(Kine6d* pose_, float* q_last_, Kine6dSol* q_)
 	for (i = 0; i < 3; i++) {
 		P0_w[i] = P06[i] - L0_wt[i];
 	}
-	if (sqrt(P0_w[0]*P0_w[0] + P0_w[1]*P0_w[1]) <= 0.000001) {
+	if (sqrt(P0_w[0]*P0_w[0] + P0_w[1]*P0_w[1]) <= 100) {
 		qs[0] = q_last_[0]; // right arm
 		qs[1] = q_last_[0]; // left arm
 		for (i = 0; i < 4; i++) {

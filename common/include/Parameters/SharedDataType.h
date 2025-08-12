@@ -10,7 +10,7 @@
 #define NUM_JOINTS 6
 #define MAX_TRAJECTORY_POINTS 512 // 支持的最大轨迹点数
 #define MAX_TRAJECTORY_LIST 8
-#define MAX_CMD_QUEUE_LEN 32      // 命令队列长度 最好为 2 的幂
+#define MAX_CMD_QUEUE_LEN 128      // 命令队列长度 最好为 2 的幂
 #define MAX_TRAJECTORY_SEGMENT 50 // 最大的连续轨迹段数
 
 
@@ -34,6 +34,7 @@ enum class HighLevelCommandType : uint8_t {
     JogJ,     // 关节点动（Jog Joint）
     JogL,     // 笛卡尔点动（Jog Linear）
     TCPCalibration, // TCP标定指令
+    MoveLLBSpline, // 笛卡尔空间两段移动中间加B样条平滑
 };
 
 // 机械结构参数
@@ -114,6 +115,16 @@ struct HighLevelCommand {
             float startspeed;
             float endspeed;
         } movel_params;
+
+        // 笛卡尔空间两段移动中间加B样条平滑
+        struct {
+            float first_pose[6]; // 第一段moveL位姿
+            float second_pose[6]; // 第二段moveL位姿
+            float velocity[2];
+            float acceleration[2];
+            float startspeed[2];
+            float endspeed[2];
+        } movell_BSpline_params;
 
         // 圆弧插补移动
         struct {

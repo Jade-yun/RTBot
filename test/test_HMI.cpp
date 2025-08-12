@@ -29,7 +29,8 @@ int main() {
         std::cout << "----------------AUTO----------------\n";
         std::cout << "Use >x,x,x,x,x,x,speed for MoveJ (speed <= 20)\n";
         std::cout << "Use @x,x,x,x,x,x,speed for MoveL (speed <= 70)\n";
-        std::cout << "Use #(x,x,x,x,x,x),(x,x,x,x,x,x),speed for MoveC (speed <= 70)\n";        
+        std::cout << "Use #(x,x,x,x,x,x),(x,x,x,x,x,x),speed for MoveC (speed <= 70)\n";
+        std::cout << "Use %(x,x,x,x,x,x,x,x,x)%(x,x,x,x,x,x,x,x,x),speed for MoveLL_BSpline (speed <= 20)\n";           
         std::cout << "---------------MANUAL---------------\n";
         std::cout << "Use j<mode><joint_index><direction> for JogJ (mode:0连续,1微动; joint_index:0-5; direction:1正向,0负向)\n";
         std::cout << "Use l<mode><axis><direction> for JogL (mode:0连续,1微动; axis:1-6; direction:1正向,0负向)\n";
@@ -216,6 +217,80 @@ int main() {
             index++;
             cmd.command_type = HighLevelCommandType::TCPCalibration;
             cmd.command_index = index;
+        }
+        else if (cmd_str[0] == '%')
+        {
+
+            // 声明变量
+            float first_pose[6], second_pose[6];
+            float speed[2], startspeed[2], endspeed[2];
+            int argNum1, argNum2;
+
+            // 检查字符串是否以%开头
+            if (cmd_str.empty() || cmd_str[0] != '%') {
+                std::cerr << "格式错误：字符串应以%开头" << std::endl;
+                continue;
+            }
+
+            // 去掉开头的%
+            std::string data_str = cmd_str.substr(1);
+
+            // 查找分隔符%的位置
+            size_t delimiter_pos = data_str.find('%');
+            if (delimiter_pos == std::string::npos) {
+                std::cerr << "未找到分隔符%" << std::endl;
+                continue;
+            }
+
+            // 分割字符串
+            std::string first_part = data_str.substr(0, delimiter_pos);
+            std::string second_part = data_str.substr(delimiter_pos + 1);
+            // std::cerr << "-1 " << std::endl;
+
+            // 解析第一组数据（不需要@前缀）
+            argNum1 = sscanf(first_part.c_str(), "%f,%f,%f,%f,%f,%f,%f,%f,%f", 
+                            &first_pose[0], &first_pose[1], &first_pose[2], 
+                            &first_pose[3], &first_pose[4], &first_pose[5], 
+                            &speed[0], &startspeed[0], &endspeed[0]);
+
+            // 解析第二组数据（不需要@前缀）
+            argNum2 = sscanf(second_part.c_str(), "%f,%f,%f,%f,%f,%f,%f,%f,%f", 
+                            &second_pose[0], &second_pose[1], &second_pose[2], 
+                            &second_pose[3], &second_pose[4], &second_pose[5], 
+                            &speed[1], &startspeed[1], &endspeed[1]);
+
+            if (argNum1 != 9 || argNum2 != 9)
+            {
+                std::cerr << "格式错误" << std::endl;
+                continue;
+            }
+
+
+            std::cerr << "0 " << std::endl;
+            for (int i = 3; i < 6; i++)
+            {
+                first_pose[i] *= M_PI / 180;
+                second_pose[i] *= M_PI / 180;
+            }
+            std::cerr << "1 " << std::endl;
+            index++;
+            cmd.command_type = HighLevelCommandType::MoveLLBSpline; 
+            cmd.command_index = index;
+
+            ::memcpy(cmd.movell_BSpline_params.first_pose, first_pose, sizeof(float) * NUM_JOINTS);
+            std::cerr << "2 " << std::endl;
+            ::memcpy(cmd.movell_BSpline_params.second_pose, second_pose, sizeof(float) * NUM_JOINTS);
+            std::cerr << "3 " << std::endl;
+
+            ::memcpy(cmd.movell_BSpline_params.velocity, speed, sizeof(float) * 2);
+            std::cerr << "4 " << std::endl;
+            ::memcpy(cmd.movell_BSpline_params.startspeed, startspeed, sizeof(float) * 2);
+            std::cerr << "5 " << std::endl;
+            ::memcpy(cmd.movell_BSpline_params.endspeed, endspeed, sizeof(float) * 2);
+            std::cerr << "6 " << std::endl; 
+
+            std::cerr << "B样条测试 " << std::endl;
+
         }
         else 
         {
