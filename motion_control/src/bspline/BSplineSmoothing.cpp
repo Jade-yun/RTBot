@@ -7,7 +7,8 @@ BSplineSmoothing* BSplineSmoothing::instance_ = nullptr;
 BSplineSmoothing::BSplineSmoothing(int degree, double maximum_error,
                                  int max_iterations, double tolerance)
     : degree_(degree), maximum_error_(maximum_error),
-      max_iterations_(max_iterations), tolerance_(tolerance) {
+      max_iterations_(max_iterations), tolerance_(tolerance),
+      lastRatio_(-1.0), lastSegmentIndex_(0), lastAccumulatedLength_(0.0), cacheValid_(false) {
     if (degree < 1) {
         throw std::invalid_argument("B样条次数必须大于等于1");
     }
@@ -70,6 +71,9 @@ void BSplineSmoothing::generateSmoothCurve(const LineSegment& seg1, const LineSe
 
     // 生成B样条曲线并存储到成员变量
     smoothedCurve_ = generateBSplineCurve(controlPoints, numSamples);
+    
+    // 重置缓存，因为生成了新的曲线
+    cacheValid_ = false;
 }
 
 // 计算点到B样条曲线的最短距离
@@ -171,34 +175,103 @@ Point3D BSplineSmoothing::get_BSpline_point(double ratio) {
     if (ratio < 0.0) ratio = 0.0;
     if (ratio > 1.0) ratio = 1.0;
 
-    // 计算在曲线点数组中的位置
-    double exactIndex = ratio * (smoothedCurve_.size() - 1);
-
-    // 获取整数部分和小数部分
-    int lowerIndex = static_cast<int>(std::floor(exactIndex));
-    int upperIndex = static_cast<int>(std::ceil(exactIndex));
-    double fraction = exactIndex - lowerIndex;
-
-    // 边界检查
-    if (lowerIndex < 0) lowerIndex = 0;
-    if (upperIndex >= static_cast<int>(smoothedCurve_.size())) {
-        upperIndex = smoothedCurve_.size() - 1;
+    // 如果只有一个点，直接返回
+    if (smoothedCurve_.size() == 1) {
+        return smoothedCurve_[0];
     }
 
-    // 如果索引相同或fraction为0，直接返回该点
-    if (lowerIndex == upperIndex || fraction < 1e-10) {
-        return smoothedCurve_[lowerIndex];
+    // 计算总弧长
+    double totalLength = getCurveLength();
+    if (totalLength < 1e-10) {
+        // 如果总长度为0（所有点重合），返回第一个点
+        return smoothedCurve_[0];
     }
 
-    // 线性插值
-    const Point3D& point1 = smoothedCurve_[lowerIndex];
-    const Point3D& point2 = smoothedCurve_[upperIndex];
+    // 计算目标弧长
+    double targetLength = ratio * totalLength;
 
-    return Point3D(
-        point1.x + (point2.x - point1.x) * fraction,
-        point1.y + (point2.y - point1.y) * fraction,
-        point1.z + (point2.z - point1.z) * fraction
-    );
+    // 如果ratio为0，返回起始点
+    if (ratio < 1e-10) {
+        // 更新缓存
+        lastRatio_ = ratio;
+        lastSegmentIndex_ = 0;
+        lastAccumulatedLength_ = 0.0;
+        cacheValid_ = true;
+        return smoothedCurve_[0];
+    }
+
+    // 如果ratio为1，返回终点
+    if (ratio > 1.0 - 1e-10) {
+        // 更新缓存
+        lastRatio_ = ratio;
+        lastSegmentIndex_ = smoothedCurve_.size() - 1;
+        lastAccumulatedLength_ = totalLength;
+        cacheValid_ = true;
+        return smoothedCurve_.back();
+    }
+
+    // 检查是否可以使用缓存
+    double accumulatedLength = 0.0;
+    size_t startIndex = 1;
+    
+    if (cacheValid_ && ratio >= lastRatio_) {
+        // 可以从上次的位置开始搜索
+        accumulatedLength = lastAccumulatedLength_;
+        startIndex = lastSegmentIndex_;
+        if (startIndex == 0) startIndex = 1; // 确保从有效的线段开始
+    } else {
+        // 缓存无效或ratio小于上次的值，从头开始
+        accumulatedLength = 0.0;
+        startIndex = 1;
+    }
+
+    // 累积弧长查找目标点
+    for (size_t i = startIndex; i < smoothedCurve_.size(); ++i) {
+        double segmentLength = (smoothedCurve_[i] - smoothedCurve_[i-1]).length();
+        double nextAccumulatedLength = accumulatedLength + segmentLength;
+
+        // 如果目标长度在当前线段内
+        if (targetLength <= nextAccumulatedLength) {
+            // 更新缓存
+            lastRatio_ = ratio;
+            lastSegmentIndex_ = i;
+            lastAccumulatedLength_ = accumulatedLength;
+            cacheValid_ = true;
+            
+            // 如果目标长度正好等于累积长度，返回当前点的起始点
+            if (std::abs(targetLength - accumulatedLength) < 1e-10) {
+                return smoothedCurve_[i-1];
+            }
+            
+            // 如果目标长度正好等于下一个累积长度，返回当前点的终点
+            if (std::abs(targetLength - nextAccumulatedLength) < 1e-10) {
+                return smoothedCurve_[i];
+            }
+
+            // 在当前线段内进行线性插值
+            double remainingLength = targetLength - accumulatedLength;
+            double segmentRatio = remainingLength / segmentLength;
+
+            const Point3D& point1 = smoothedCurve_[i-1];
+            const Point3D& point2 = smoothedCurve_[i];
+
+            return Point3D(
+                point1.x + (point2.x - point1.x) * segmentRatio,
+                point1.y + (point2.y - point1.y) * segmentRatio,
+                point1.z + (point2.z - point1.z) * segmentRatio
+            );
+        }
+
+        accumulatedLength = nextAccumulatedLength;
+    }
+
+    // 如果没有找到（理论上不应该发生），返回最后一个点
+    // 更新缓存
+    lastRatio_ = ratio;
+    lastSegmentIndex_ = smoothedCurve_.size() - 1;
+    lastAccumulatedLength_ = totalLength;
+    cacheValid_ = true;
+    return smoothedCurve_.back();
 }
 
 // 获取B样条曲线的总路程（所有点之间距离的总和）

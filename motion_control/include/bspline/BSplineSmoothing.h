@@ -70,6 +70,12 @@ private:
     double tolerance_;             // 收敛容差
     std::vector<Point3D> smoothedCurve_;  // 存储生成的B样条曲线点
 
+    // 缓存变量用于优化get_BSpline_point函数
+    mutable double lastRatio_;              // 上一次查询的ratio
+    mutable size_t lastSegmentIndex_;       // 上一次查询所在的线段索引
+    mutable double lastAccumulatedLength_;  // 上一次查询时的累积弧长
+    mutable bool cacheValid_;               // 缓存是否有效
+
     static BSplineSmoothing* instance_;  // 单例实例指针
 
     // 私有构造函数

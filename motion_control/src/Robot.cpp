@@ -1510,7 +1510,7 @@ void Robot::moveBSpline(float _speed, float _start_speed, float _end_speed)
 
 void Robot::moveL_Avoid_points(std::array<float, NUM_JOINTS> tar_pose, float _speed, float _start_speed, float _end_speed)
 {
-
+    
     JointDataManager* a = JointDataManager::getInstance();
 
     struct timespec start, end;
@@ -1525,7 +1525,7 @@ void Robot::moveL_Avoid_points(std::array<float, NUM_JOINTS> tar_pose, float _sp
     bool singular_flag = false;
 
 
-        // 重置状态标志,开始新的运动
+    // 重置状态标志,开始新的运动
     GlobalParams::isStop = false;
     GlobalParams::isPause = false;
     GlobalParams::isResume = false;
@@ -1585,7 +1585,7 @@ void Robot::moveL_Avoid_points(std::array<float, NUM_JOINTS> tar_pose, float _sp
     JointDataManager::getInstance()->addData({0,0,0,0,0,0}, 0, 0, 0);
     
     while (!motionCompleted) {
-        
+
         index++;
         
         // 检查暂停状态
@@ -1703,8 +1703,6 @@ void Robot::moveL_Avoid_points(std::array<float, NUM_JOINTS> tar_pose, float _sp
             
             // 更新当前关节角度
             tmp_curJoints = target_joints;
-
-//            JointDataManager::getInstance()->all_addData(target_joints, q_sol.sol_flag[best][0], q_sol.sol_flag[best][1], q_sol.sol_flag[best][2]);
 
             if(isSingular)
             {
@@ -2819,9 +2817,7 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
                       std::end(cmd.movell_BSpline_params.endspeed),
                       _end_speed.begin());
 
-
             twoMoveL_BSplineTransition(first_pose,second_pose,_speed,_start_speed,_end_speed);
-            // testTCPCalibration();
             break;
         }
         default:
