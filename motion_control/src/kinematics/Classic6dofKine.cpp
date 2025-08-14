@@ -17,50 +17,50 @@
 #define atan2f(Y, X) (float)atan2(Y, X)
 
 
-// #define CLASSIC6DOF_L_BS 170.0f
-// #define CLASSIC6DOF_L_SE 260.0f
-// #define CLASSIC6DOF_L_EW 242.0f
-// #define CLASSIC6DOF_D_EW 130.0f
-// #define CLASSIC6DOF_L_WT 80.0f
-
-// //const float RAD_TO_DEG = 57.295777754771045f;
-
-// static float classic6dof_DH[6][4] = {
-// 	{	0.0f,			CLASSIC6DOF_L_BS,	0.0f,				-(float)M_PI_2	},
-// 	{	-(float)M_PI_2,	0.0f,				CLASSIC6DOF_L_SE,	0.0f			},
-// 	{	(float)M_PI,	0.0f,				CLASSIC6DOF_D_EW,	(float)M_PI_2	},
-// 	{	0.0f,			CLASSIC6DOF_L_EW,	0.0f,				-(float)M_PI_2	},
-// 	{	0.0f,			0.0f,				0.0f,				(float)M_PI_2	},
-// 	{	0.0f,			CLASSIC6DOF_L_WT,	0.0f,				0.0f			}
-// }; // home, d, a, alpha
-// static float L1_bs[3] =	{	 0.0f,				-CLASSIC6DOF_L_BS,	0.0f				};
-// static float L2_se[3] = {	 CLASSIC6DOF_L_SE,	 0.0f,				0.0f				};
-// static float L3_ew[3] = { -CLASSIC6DOF_D_EW,	 0.0f,				CLASSIC6DOF_L_EW	};
-// static float L6_wt[3] = {	 0.0f,				 0.0f,				CLASSIC6DOF_L_WT	};
-
-
-
-#define CLASSIC6DOF_L_BS 100.0f
-#define CLASSIC6DOF_D_BS 50.0f
-#define CLASSIC6DOF_L_SE 340.0f
-#define CLASSIC6DOF_L_EW 360.0f
+#define CLASSIC6DOF_L_BS 330.0f
+#define CLASSIC6DOF_L_SE 260.0f
+#define CLASSIC6DOF_L_EW 280.0f
 #define CLASSIC6DOF_D_EW 30.0f
-#define CLASSIC6DOF_L_WT 100.0f
+#define CLASSIC6DOF_L_WT 80.0f
 
 //const float RAD_TO_DEG = 57.295777754771045f;
 
 static float classic6dof_DH[6][4] = {
-	{	0.0f,			CLASSIC6DOF_L_BS,	CLASSIC6DOF_D_BS,	-(float)M_PI_2	},
+	{	0.0f,			CLASSIC6DOF_L_BS,	0.0f,				-(float)M_PI_2	},
 	{	-(float)M_PI_2,	0.0f,				CLASSIC6DOF_L_SE,	0.0f			},
-	{	 (float)M_PI_2,	0.0f,				CLASSIC6DOF_D_EW,	(float)M_PI_2	},
+	{	(float)M_PI_2,	0.0f,				CLASSIC6DOF_D_EW,	(float)M_PI_2	},
 	{	0.0f,			CLASSIC6DOF_L_EW,	0.0f,				-(float)M_PI_2	},
-	{	0.0f,			0.0f,				0.0f,				 (float)M_PI_2	},
+	{	0.0f,			0.0f,				0.0f,				(float)M_PI_2	},
 	{	0.0f,			CLASSIC6DOF_L_WT,	0.0f,				0.0f			}
 }; // home, d, a, alpha
-static float L1_bs[3] =	{	 CLASSIC6DOF_D_BS,	-CLASSIC6DOF_L_BS,	0.0f				};
+static float L1_bs[3] =	{	 0.0f,				-CLASSIC6DOF_L_BS,	0.0f				};
 static float L2_se[3] = {	 CLASSIC6DOF_L_SE,	 0.0f,				0.0f				};
 static float L3_ew[3] = { -CLASSIC6DOF_D_EW,	 0.0f,				CLASSIC6DOF_L_EW	};
 static float L6_wt[3] = {	 0.0f,				 0.0f,				CLASSIC6DOF_L_WT	};
+
+
+
+// #define CLASSIC6DOF_L_BS 100.0f
+// #define CLASSIC6DOF_D_BS 50.0f
+// #define CLASSIC6DOF_L_SE 340.0f
+// #define CLASSIC6DOF_L_EW 360.0f
+// #define CLASSIC6DOF_D_EW 30.0f
+// #define CLASSIC6DOF_L_WT 100.0f
+
+// //const float RAD_TO_DEG = 57.295777754771045f;
+
+// static float classic6dof_DH[6][4] = {
+// 	{	0.0f,			CLASSIC6DOF_L_BS,	CLASSIC6DOF_D_BS,	-(float)M_PI_2	},
+// 	{	-(float)M_PI_2,	0.0f,				CLASSIC6DOF_L_SE,	0.0f			},
+// 	{	 (float)M_PI_2,	0.0f,				CLASSIC6DOF_D_EW,	(float)M_PI_2	},
+// 	{	0.0f,			CLASSIC6DOF_L_EW,	0.0f,				-(float)M_PI_2	},
+// 	{	0.0f,			0.0f,				0.0f,				 (float)M_PI_2	},
+// 	{	0.0f,			CLASSIC6DOF_L_WT,	0.0f,				0.0f			}
+// }; // home, d, a, alpha
+// static float L1_bs[3] =	{	 CLASSIC6DOF_D_BS,	-CLASSIC6DOF_L_BS,	0.0f				};
+// static float L2_se[3] = {	 CLASSIC6DOF_L_SE,	 0.0f,				0.0f				};
+// static float L3_ew[3] = { -CLASSIC6DOF_D_EW,	 0.0f,				CLASSIC6DOF_L_EW	};
+// static float L6_wt[3] = {	 0.0f,				 0.0f,				CLASSIC6DOF_L_WT	};
 
 static void matMultiply(float* M1, float* M2, float* M, int m, int l, int n)
 {

@@ -72,6 +72,16 @@ int main() {
                             pose_end, pose_end + 1, pose_end + 2,pose_end + 3, pose_end + 4, pose_end + 5,
                             &speed, &startspeed, &endspeed);
 
+            for (int i = 3; i < 6; i++)
+            {
+                pose_mid[i] *= M_PI / 180;
+            }
+
+            for (int i = 3; i < 6; i++)
+            {
+                pose_end[i] *= M_PI / 180;
+            }
+
             if (argNum != 15)
             {
                 std::cout << "moveC input error!\n";

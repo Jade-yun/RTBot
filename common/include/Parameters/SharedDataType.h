@@ -10,7 +10,7 @@
 #define NUM_JOINTS 6
 #define MAX_TRAJECTORY_POINTS 512 // 支持的最大轨迹点数
 #define MAX_TRAJECTORY_LIST 8
-#define MAX_CMD_QUEUE_LEN 32      // 命令队列长度 最好为 2 的幂
+#define MAX_CMD_QUEUE_LEN 128      // 命令队列长度 最好为 2 的幂
 #define MAX_TRAJECTORY_SEGMENT 50 // 最大的连续轨迹段数
 
 

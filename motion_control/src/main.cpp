@@ -117,7 +117,7 @@ int main()
     robotTask.setThreadPriority(80);
 
     // // 等待机器人和EtherCAT稳定
-    // std::this_thread::sleep_for(std::chrono::seconds(3));
+    // std::this_thread::sleep_for(std::chrono::seconds(5));
 
     // // 定义moveJ参数
     // std::array<float, NUM_JOINTS> joint_pos1 = {60.0f * M_PI / 180.0f, 0, 0, 0, 0, 0};
@@ -141,31 +141,66 @@ int main()
 
 
     // 定义moveL 参数
-    // std::array<float, NUM_JOINTS> pose1 = {200.0f, 100.0f, 600.0f, 0, 0, 0};
-    // float speed1 = 120.0f;
+    // std::array<float, NUM_JOINTS> pose1 = {280.0f, 50.0f, 540.0f, M_PI, 0, -M_PI};
+    // float speed1 = 30.0f;
     // float start_speed1 = 0.0f;
-    // float end_speed1 = 50.0f;
+    // float end_speed1 = 30.0f;
 
-    // std::cout << "Executing first MoveL command..." << std::endl;
+    // std::cout << "Executing 1 MoveL command..." << std::endl;
     // robot.moveL(pose1, speed1, start_speed1, end_speed1);
-    // std::cout << "First MoveL command finished." << std::endl;
+    // std::cout << "1 MoveL command finished." << std::endl;
+    
+    // std::array<float, NUM_JOINTS> pose2 {380.0f, 50.0f, 540.0f, M_PI, 0, -M_PI};
+    // float speed2 = 30.0f;
+    // float start_speed2 = 30.0f;
+    // float end_speed2 = 30.0f;
 
-
-    // std::array<float, NUM_JOINTS> pose2 {300.0f, 300.0f, 500.0f, 0, 0, 0};
-    // float speed2 = 80.0f;
-    // float start_speed2 = 50.0f;
-    // float end_speed2 = 0.0f;
-
-    // std::cout << "Executing second MoveL command..." << std::endl;
+    // std::cout << "Executing 2 MoveL command..." << std::endl;
     // robot.moveL(pose2, speed2, start_speed2, end_speed2);
-    // std::cout << "Second MoveL command finished." << std::endl;
+    // std::cout << "2 MoveL command finished." << std::endl;
+    // //
+    // std::array<float, NUM_JOINTS> pose3 {380.0f, -50.0f, 540.0f, M_PI, 0, -M_PI};
+    // float speed3 = 30.0f;
+    // float start_speed3 = 30.0f;
+    // float end_speed3 = 30.0f;
 
-    //定义moveC参数
-    // std::array<float, NUM_JOINTS> mid_pose = {100.0f, 0.0f, 600.0f, 0, 0, 0};
-    // std::array<float, NUM_JOINTS> end_pose = {200.0f, -100.0f, 600.0f, 0, 0, 0};
+    // std::cout << "Executing 3 MoveL command..." << std::endl;
+    // robot.moveL(pose3, speed3, start_speed3, end_speed3);
+    // std::cout << "3 MoveL command finished." << std::endl;
+    // //
+    // std::array<float, NUM_JOINTS> pose4 {280.0f, -50.0f, 540.0f, M_PI, 0, -M_PI};
+    // float speed4 = 30.0f;
+    // float start_speed4 = 30.0f;
+    // float end_speed4 = 30.0f;
+
+    // std::cout << "Executing 4 MoveL command..." << std::endl;
+    // robot.moveL(pose4, speed4, start_speed4, end_speed4);
+    // std::cout << "4 MoveL command finished." << std::endl;
+    // //
+    // std::array<float, NUM_JOINTS> pose5 {280.0f, 0.0f, 540.0f, M_PI, 0, -M_PI};
+    // float speed5 = 30.0f;
+    // float start_speed5 = 30.0f;
+    // float end_speed5 = 0.0f;
+
+    // std::cout << "Executing 5 MoveL command..." << std::endl;
+    // robot.moveL(pose5, speed5, start_speed5, end_speed5);
+    // std::cout << "5 MoveL command finished." << std::endl;
+    // //
+    // std::array<float, NUM_JOINTS> pose6 {230.0f, 0.0f, 540.0f, M_PI, 0, -M_PI};
+    // float speed6 = 50.0f;
+    // float start_speed6 = 50.0f;
+    // float end_speed6 = 0.0f;
+
+    // std::cout << "Executing 6 MoveL command..." << std::endl;
+    // robot.moveL(pose6, speed6, start_speed6, end_speed6);
+    // std::cout << "6 MoveL command finished." << std::endl;
+
+    // //定义moveC参数
+    // std::array<float, NUM_JOINTS> mid_pose = {330.0f, 50.0f, 540.0f, M_PI, 0, -M_PI};
+    // std::array<float, NUM_JOINTS> end_pose = {380.0f, 0.0f, 540.0f, M_PI, 0, -M_PI};
 
     // float speed3 = 50.0f;
-    // float start_speed3 = 50.0f;
+    // float start_speed3 = 0.0f;
     // float end_speed3 = 50.0f;
 
     // std::cout << "Executing first MoveC command..." << std::endl;
@@ -173,8 +208,8 @@ int main()
     // std::cout << "First MoveC command finished." << std::endl;
 
 
-    // std::array<float, NUM_JOINTS> mid_pose2 = {300.0f, 0.0f, 600.0f, 0, 0, 0};
-    // std::array<float, NUM_JOINTS> end_pose2 = {200.0f, 100.0f, 600.0f, 0, 0, 0};
+    // std::array<float, NUM_JOINTS> mid_pose2 = {330.0f, -50.0f, 540.0f, M_PI, 0, -M_PI};
+    // std::array<float, NUM_JOINTS> end_pose2 = {280.0f, 0.0f, 540.0f, M_PI, 0, -M_PI};
 
     // float speed4 = 50.0f;
     // float start_speed4 = 50.0f;
@@ -183,7 +218,8 @@ int main()
     // std::cout << "Executing second MoveC command..." << std::endl;
     // robot.moveC(mid_pose2, end_pose2, speed4, start_speed4, end_speed4);
     // std::cout << "Second MoveC command finished." << std::endl;
-
+    
+    // robot.jogL(0, 1 , 1);
 
 
 

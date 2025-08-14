@@ -12,6 +12,8 @@
 #include <fstream>
 #include <algorithm>
 
+
+
 extern SharedMemoryManager<SharedMemoryData> shm;
 
 Robot::Robot()
@@ -29,16 +31,16 @@ void Robot::init()
 
     m_angleLimitMax[0] = M_PI * 170.0f / 180.0f;
     m_angleLimitMin[0] = -M_PI * 170.0f / 180.0f;
-    m_angleLimitMax[1] = M_PI * 120.0f / 180.0f;
-    m_angleLimitMin[1] = -M_PI * 120.0f / 180.0f;
-    m_angleLimitMax[2] = M_PI * 150.0f / 180.0f;
-    m_angleLimitMin[2] = -M_PI * 120.0f / 180.0f;
-    m_angleLimitMax[3] = M_PI * 170.0f / 180.0f;
-    m_angleLimitMin[3] = -M_PI * 170.0f / 180.0f;
-    m_angleLimitMax[4] = M_PI * 130.0f / 180.0f;
-    m_angleLimitMin[4] = -M_PI * 120.0f / 180.0f;
-    m_angleLimitMax[5] = M_PI * 2.0f;
-    m_angleLimitMin[5] = -M_PI * 2.0f;
+    m_angleLimitMax[1] = M_PI * 130.0f / 180.0f;
+    m_angleLimitMin[1] = -M_PI * 110.0f / 180.0f;
+    m_angleLimitMax[2] = M_PI * 155.0f / 180.0f;
+    m_angleLimitMin[2] = -M_PI * 65.0f / 180.0f;
+    m_angleLimitMax[3] = M_PI * 180.0f / 180.0f;
+    m_angleLimitMin[3] = -M_PI * 180.0f / 180.0f;
+    m_angleLimitMax[4] = M_PI * 123.0f / 180.0f;
+    m_angleLimitMin[4] = -M_PI * 123.0f / 180.0f;
+    m_angleLimitMax[5] = M_PI * 455.0f / 180.0f;
+    m_angleLimitMin[5] = -M_PI * 455.0f / 180.0f;
     
     std::cout << "机器人初始化完成" << std::endl;
 }
@@ -127,24 +129,13 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed,
     int cycleCount = 0;
 
     while (!motionCompleted && !GlobalParams::isStop) {
-        // 检查暂停状态
+        // 检查暂停/恢复（非阻塞，允许规划器内部平滑过程在 getNextState 中推进）
         if (GlobalParams::isPause) {
+            // 每个周期都调用一次，内部有状态保护，不会重复生效
             m_velocityPlanner.pause();
-            
-            // 等待恢复
-            while (GlobalParams::isPause && !GlobalParams::isStop) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                HighLevelCommand cmd;
-                if (shm().high_prio_cmd_queue.pop(cmd))
-                {
-                    handleHighPriorityCommand(cmd);
-                }
-            }
-            
-            // 恢复运动
-            if (!GlobalParams::isStop && GlobalParams::isResume) {
-                m_velocityPlanner.resume();
-            }
+        } else if (GlobalParams::isResume && m_velocityPlanner.isPaused()) {
+            // 仅当规划器已经真正处于暂停态时，才启动平滑恢复
+            m_velocityPlanner.resume();
         }
         
         // 处理紧急停止
@@ -153,8 +144,15 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed,
             break;
         }
         
-        // 获取当前运动状态
+        // 获取当前运动状态（必须每周期调用，以推进平滑暂停/恢复过程）
         VelocityPlanner::MotionState state = m_velocityPlanner.getNextState();
+        
+        // 这里仍可处理高优先级命令（不阻塞主循环）
+        HighLevelCommand cmd;
+        if (shm().high_prio_cmd_queue.pop(cmd))
+        {
+            handleHighPriorityCommand(cmd);
+        }
         
         // 计算插补比例系数
         double lambda = state.position / maxDistance;
@@ -163,7 +161,7 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed,
         lambda = std::max(0.0, std::min(1.0, lambda));
 
         cycleCount++;
-         // 每100个周期打印一次状态信息
+        // 每100个周期打印一次状态信息
         if (cycleCount % 100 == 0) {
             std::cout << "周期: " << cycleCount 
                       << ", 位置: " << m_curJoints[maxDistanceJoint] * 180.0 / M_PI << "°"
@@ -331,30 +329,72 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _star
         Kine6dSol q_sol;
         classic6dofInvKine(&target_pose, m_curJoints.data(), &q_sol);
         
-        // 选择最优解
+        // 选择最优解 - 改进版本
         bool valid[8];
         int best = -1;
-        float best_dist = 1e6;
+        float best_score = 1e6;
+        static int last_best_solution = -1; // 记录上一次选择的解
+
         for (int k = 0; k < 8; ++k) {
             valid[k] = true;
+            // 检查关节限制
             for (int j = 0; j < NUM_JOINTS; ++j) {
                 if (q_sol.sol[k][j] < m_angleLimitMin[j] || q_sol.sol[k][j] > m_angleLimitMax[j]) {
                     valid[k] = false;
                     break;
                 }
             }
+            
             if (valid[k]) {
-                float dist = 0;
-                for (int j = 0; j < NUM_JOINTS; ++j)
-                    dist += std::pow(m_curJoints[j] - q_sol.sol[k][j], 2);
-                if (dist < best_dist) {
+                // 计算综合评分
+                float position_dist = 0;
+                float velocity_penalty = 0;
+                float continuity_bonus = 0;
+                
+                // 位置距离权重
+                for (int j = 0; j < NUM_JOINTS; ++j) {
+                    position_dist += std::pow(m_curJoints[j] - q_sol.sol[k][j], 2);
+                }
+                
+                // 速度连续性惩罚（如果有上一次的解）
+                if (last_best_solution >= 0 && cycleCount > 0) {
+                    for (int j = 0; j < NUM_JOINTS; ++j) {
+                        float vel_diff = std::abs(q_sol.sol[k][j] - q_sol.sol[last_best_solution][j]);
+                        velocity_penalty += vel_diff * 10.0; // 速度跳跃惩罚权重
+                    }
+                }
+                
+                // 解一致性奖励
+                if (k == last_best_solution) {
+                    continuity_bonus = -50.0; // 优先选择相同分支的解
+                }
+                
+                float total_score = position_dist + velocity_penalty + continuity_bonus;
+                
+                if (total_score < best_score) {
                     best = k;
-                    best_dist = dist;
+                    best_score = total_score;
                 }
             }
         }
-        
+
+        // 更新记录
         if (best >= 0) {
+            last_best_solution = best;
+            //检查关节角度变化
+            bool angleChangeOk = true;
+            for (int j = 0; j < NUM_JOINTS; ++j) {
+                if (fabs(q_sol.sol[best][j] - m_curJoints[j]) > 0.1) {
+                    angleChangeOk = false;
+                    break;
+                }
+            }
+            
+            if (!angleChangeOk) {
+                std::cerr << "关节角度变化过大,退出插补！" << std::endl;
+                return;
+            }
+
             std::array<float, NUM_JOINTS> target_joints;
             for (int j = 0; j < NUM_JOINTS; ++j)
                 target_joints[j] = q_sol.sol[best][j];
@@ -363,19 +403,19 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _star
             m_curJoints = target_joints;
 
             // 输出到CSV文件
-            csv_write_counter++;
-            if (csv_write_counter >= CSV_WRITE_INTERVAL) {
-                std::ofstream csvFile("robot_joints_data.csv", std::ios::app);
-                if (csvFile.is_open()) {
-                    csvFile << target_joints[0] << "," << target_joints[1] << "," << target_joints[2] 
-                           << "," << target_joints[3] << "," << target_joints[4] << "," << target_joints[5] << "\n";
-                    csvFile.close();
-                }
-                csv_write_counter = 0; // 重置计数器
-            }
+            // csv_write_counter++;
+            // if (csv_write_counter >= CSV_WRITE_INTERVAL) {
+            //     std::ofstream csvFile("robot_joints_data.csv", std::ios::app);
+            //     if (csvFile.is_open()) {
+            //         csvFile << target_joints[0] << "," << target_joints[1] << "," << target_joints[2] 
+            //                << "," << target_joints[3] << "," << target_joints[4] << "," << target_joints[5] << "\n";
+            //         csvFile.close();
+            //     }
+            //     csv_write_counter = 0; // 重置计数器
+            // }
             
             // 发送关节角度到底层控制器
-            // moveJoints(target_joints);
+            moveJoints(target_joints);
         } else {
             std::cout << "逆运动学求解失败，运动停止" << std::endl;
             break;
@@ -627,18 +667,19 @@ void Robot::moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_
             m_curJoints = target_joints;
 
             // 输出到CSV文件
-            csv_write_counter++;
-            if (csv_write_counter >= CSV_WRITE_INTERVAL) {
-                std::ofstream csvFile("robot_joints_data.csv", std::ios::app);
-                if (csvFile.is_open()) {
-                    csvFile << target_joints[0] << "," << target_joints[1] << "," << target_joints[2] 
-                           << "," << target_joints[3] << "," << target_joints[4] << "," << target_joints[5] << "\n";
-                    csvFile.close();
-                }
-                csv_write_counter = 0; // 重置计数器
-            }
+            // csv_write_counter++;
+            // if (csv_write_counter >= CSV_WRITE_INTERVAL) {
+            //     std::ofstream csvFile("robot_joints_data.csv", std::ios::app);
+            //     if (csvFile.is_open()) {
+            //         csvFile << target_joints[0] << "," << target_joints[1] << "," << target_joints[2] 
+            //                << "," << target_joints[3] << "," << target_joints[4] << "," << target_joints[5] << "\n";
+            //         csvFile.close();
+            //     }
+            //     csv_write_counter = 0; // 重置计数器
+            // }
+
             //发送关节角度到底层控制器
-            // moveJoints(target_joints);
+            moveJoints(target_joints);
         }
 
         // 检查运动是否完成
@@ -754,7 +795,7 @@ void Robot::jogJ(int _mode, int _index, int _direction)
     target_joints[_index] = target_pos;
     
     // 调用moveJ函数执行点动到限位
-    // moveJ(target_joints, jog_speed);
+    moveJ(target_joints, jog_speed, 0, 0);
     
     std::cout << "jogJ - 关节" << _index << " 点动完成,当前位置: " 
               << m_curJoints[_index] * 180.0f / M_PI << "度" << std::endl;
@@ -794,7 +835,7 @@ void Robot::jogL(int mode, int axis, int _direction)
             //直接给X轴工作空间最大限位,在这里循环判断,递增或递减目标位置的X值,直到不超出目标位置（误差10mm之内）
                 if (_direction == 1)
                 {
-                    target_pose.X = 850.0f;
+                    target_pose.X = m_workspaceLimitMaxX;
                     while(!_flag)
                     {
                         classic6dofInvKine(&target_pose, m_curJoints.data(), &_q);
@@ -858,7 +899,7 @@ void Robot::jogL(int mode, int axis, int _direction)
                     
                 if (_direction == 0)
                 {
-                    target_pose.X = -850.0f;
+                    target_pose.X = m_workspaceLimitMinX;
                     while (!_flag)
                     {   
                         classic6dofInvKine(&target_pose, m_curJoints.data(), &_q);
@@ -925,7 +966,7 @@ void Robot::jogL(int mode, int axis, int _direction)
             //直接给Y轴工作空间最大限位,在这里循环判断,递增或递减目标位置的Y值,直到不超出目标位置（误差10mm之内）
                 if (_direction == 1)
                 {
-                    target_pose.Y = 850.0f;
+                    target_pose.Y = m_workspaceLimitMaxY;
                     while(!_flag)
                     {
                         classic6dofInvKine(&target_pose, m_curJoints.data(), &_q);
@@ -989,7 +1030,7 @@ void Robot::jogL(int mode, int axis, int _direction)
                     
                 if (_direction == 0)
                 {
-                    target_pose.Y = -850.0f;
+                    target_pose.Y = m_workspaceLimitMinY;
                     while (!_flag)
                     {   
                         classic6dofInvKine(&target_pose, m_curJoints.data(), &_q);
@@ -1056,7 +1097,7 @@ void Robot::jogL(int mode, int axis, int _direction)
             //直接给Z轴工作空间最大限位,在这里循环判断,递增或递减目标位置的Z值,直到不超出目标位置（误差10mm之内）
                 if (_direction == 1)
                 {
-                    target_pose.Z = 900.0f;
+                    target_pose.Z = m_workspaceLimitMaxZ;
                     while(!_flag)
                     {
                         classic6dofInvKine(&target_pose, m_curJoints.data(), &_q);
@@ -1120,7 +1161,7 @@ void Robot::jogL(int mode, int axis, int _direction)
                     
                 if (_direction == 0)
                 {
-                    target_pose.Z = -700.0f;
+                    target_pose.Z = m_workspaceLimitMinZ;
                     while (!_flag)
                     {   
                         classic6dofInvKine(&target_pose, m_curJoints.data(), &_q);
@@ -1256,7 +1297,7 @@ void Robot::jogL(int mode, int axis, int _direction)
               << " C=" << target_pose.C * 180.0f / M_PI << std::endl;
 
     // 调用moveL函数执行笛卡尔空间运动
-    // moveL(target_pose_array, jog_speed);
+    moveL(target_pose_array, jog_speed, 0, 0);
     
     std::cout << "jogL - 笛卡尔点动完成" << std::endl;
 }
@@ -1271,7 +1312,7 @@ void Robot::moveJoints(const std::array<float, NUM_JOINTS>& _joints)
     
     for (int i = 0; i < NUM_JOINTS; i++)
     {
-        montor_cmd.joint_pos[i] = _joints[i] * (250000.0 / M_PI * 13.1072);   //关节角度转换到电机脉冲
+        montor_cmd.joint_pos[i] = (_joints[i] - REST_JOINT[i]) / M_PI / 2.0f * m_GearRatio[i] * pow(2, m_Encoderbit[i]);   //关节角度转换到电机脉冲
     }
 
     // 入队列
@@ -1836,11 +1877,11 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
         case HighLevelCommandType::Homing:
         {
             std::cout << "Homing!\n";
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             homing();
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             break;
         }
         case HighLevelCommandType::MoveJ:
@@ -1853,11 +1894,11 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             float startspeed = cmd.movej_params.start_speed;
             float endspeed = cmd.movej_params.end_speed;
 
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             moveJ(pos, speed, startspeed, endspeed);
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             std::cout << std::endl;
             break;
         }
@@ -1871,11 +1912,11 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             float startspeed = cmd.movel_params.startspeed;
             float endspeed = cmd.movel_params.endspeed;
 
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             moveL(pose, speed, startspeed, endspeed);
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             std::cout << std::endl;
             break;
         }
@@ -1892,11 +1933,11 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             float speed = cmd.movec_params.velocity;
             float startspeed = cmd.movec_params.startspeed;
             float endspeed = cmd.movec_params.endspeed;
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             moveC(pose_mid, pose_end, speed, startspeed, endspeed);
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             break;
         }
         case HighLevelCommandType::MoveCF:
@@ -1921,11 +1962,11 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
 
             std::cout << "JogJ - " << (mode == 0 ? "点动" : "寸动") << " 关节" << joint_index << " 方向: " << direction << std::endl;
 
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             jogJ(mode, joint_index, direction);
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             std::cout << std::endl;
             break;
         }
@@ -1936,11 +1977,11 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             int direction = cmd.jogl_params.direction;
 
             std::cout << "JogL - " << (mode == 0 ? "点动" : "寸动") << " 轴" << axis << " 方向: " << direction << std::endl;
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             jogL(mode, axis, direction);
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             std::cout << std::endl;
             break;
         }

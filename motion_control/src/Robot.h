@@ -71,8 +71,9 @@ private:
     
 
 public:
-    // const std::array<float, NUM_JOINTS> REST_JOINT = {0, -(M_PI*10.0f/180.0f), (M_PI*100.0f/180.0f), 0, (M_PI*30.0f/180.0f), 0};
-    const std::array<float, NUM_JOINTS> REST_JOINT = {0, 0, 0, 0, 0, 0};
+    // const std::array<float, NUM_JOINTS> REST_JOINT = {M_PI_2, 0, 0, 0, 0, 0};
+    const std::array<float, NUM_JOINTS> REST_JOINT = {0, 0, M_PI_2, 0, M_PI_2, 0};
+    // const std::array<float, NUM_JOINTS> REST_JOINT = {0, 0, 0, 0, 0, 0};
     // const std::array<float, NUM_JOINTS> REST_JOINT = {150.0f / 180.0f * M_PI, 45.0f / 180.0f * M_PI, 37.5f / 180.0f * M_PI, 0, 97.5f / 180.0f * M_PI, -30.0f / 180.0f * M_PI};
 
 
@@ -114,12 +115,12 @@ public:
     std::array<float, NUM_JOINTS> m_JointCompliance;
 
     //工作空间限制
-    float m_workspaceLimitMaxX = 850.0f;
-    float m_workspaceLimitMinX = -850.0f;
-    float m_workspaceLimitMaxY = 850.0f;
-    float m_workspaceLimitMinY = -850.0f;
-    float m_workspaceLimitMaxZ = 900.0f;
-    float m_workspaceLimitMinZ = -700.0f;
+    float m_workspaceLimitMaxX = 620.0f;
+    float m_workspaceLimitMinX = -620.0f;
+    float m_workspaceLimitMaxY = 620.0f;
+    float m_workspaceLimitMinY = -620.0f;
+    float m_workspaceLimitMaxZ = 950.0f;
+    float m_workspaceLimitMinZ = -290.0f;
 
     // 加速度倍率
     float m_AccRatio = 1;
@@ -139,9 +140,9 @@ public:
     float m_SpeedRatio = 1;
 
     // 每个关节的减速比
-    std::array<float, NUM_JOINTS> m_GearRatio = {10, 10, 10, 10, 10, 10};
+    std::array<float, NUM_JOINTS> m_GearRatio = {76, 76, 76, 60, 50, 50};
     // 编码器位数
-    std::array<float, NUM_JOINTS> m_Encoderbit;
+    std::array<float, NUM_JOINTS> m_Encoderbit = {17, 17, 17, 17, 17,17};
 
     // TCP标定相关变量
     std::vector<std::array<float, 6>> m_tcpCalibrationPoses; // 存储标定点的位姿 (X,Y,Z,A,B,C)

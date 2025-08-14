@@ -5,7 +5,6 @@
 #include <string.h>        // memset
 #include <etherlab/ecrt.h> // IGH EtherCAT 主站API
 #include <signal.h>
-#include <math.h>
 #include "ethercat/EtherCATInterface.h"
 
 #include "Utilities/SharedMemoryManager.h"
@@ -32,14 +31,14 @@ DynamicalModel model;
 
 #define TIMESPEC2NS(T) ((uint64_t)(T).tv_sec * NSEC_PER_SEC + (T).tv_nsec)
 
-constexpr int NUM_SLAVES = 1;
-// constexpr int NUM_SLAVES = 6;
+// constexpr int NUM_SLAVES = 1;
+constexpr int NUM_SLAVES = 6;
 
 uint32_t Joint_Zero_Offset[6] = {500000, 150000}; //记录偏移
 
 uint32_t SlaveVID[] = {0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7};
-// uint32_t SlavePID[] = {0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402};
-uint32_t SlavePID[] = {0x005e0402, 0x006b0402, 0x005e0402, 0x005e0402, 0x005e0402, 0x005e0402};
+uint32_t SlavePID[] = {0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402};
+// uint32_t SlavePID[] = {0x005e0402, 0x006b0402, 0x005e0402, 0x005e0402, 0x005e0402, 0x005e0402};
 // #define PRODUCT_ID 0x005e0402, 0x006b0402, 0x006b0402;
 
 
@@ -552,6 +551,9 @@ void EtherCATInterface::runTask()
         
         actual_pos_pulse[i] = EC_READ_S32(domain_pd_ + offset.Position_Actual_Value[i]);
 
+        // actual_pos_pulse[i] = EC_READ_S32(domain_pd_ + offset.Position_Actual_Value[i]) + \
+        //                     (REST_JOINT[i] / (2 * M_PI) * m_GearRatio[i] * pow(2, m_Encoderbit[i]));
+
         actual_vel[i] = EC_READ_S32(domain_pd_ + offset.Velocity_actual_value[i]);
 
         actual_torque[i] = EC_READ_S32(domain_pd_ + offset.actualTorque[i]);
@@ -561,7 +563,7 @@ void EtherCATInterface::runTask()
     static uint32_t print_cnt = 0;
     if (print_cnt == 100)
     {
-        // printf("Joint Current: %d %d\n", actual_pos_pulse[0], actual_pos_pulse[1]);   
+        printf("Current pulse: %d\n", actual_pos_pulse[0]);   
         // printf("target pulse: %d %d\n",target_pos_pulse[0], target_pos_pulse[1]);
         // printf("Joint Velocity: %d %d\n", actual_vel[0], actual_vel[1]);
 
@@ -585,7 +587,7 @@ void EtherCATInterface::runTask()
             for(int i = 0; i < NUM_SLAVES; i++) 
             {
 
-                target_pos_pulse[i] = montor_cmd.joint_pos[i];
+                target_pos_pulse[i] = montor_cmd.joint_pos[i] + REST_JOINT[i];
             } 
         }
         
@@ -614,10 +616,13 @@ void EtherCATInterface::runTask()
             case (ready_to_switch_on):
                 EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x07);
                 target_pos_pulse[i] = actual_pos_pulse[i];
+
+                // target_pos_pulse[i] = actual_pos_pulse[i] - \
+                //                     (REST_JOINT[i] / (2 * M_PI) * m_GearRatio[i] * pow(2, m_Encoderbit[i]));
                 break;
             case (switched_on):
                 EC_WRITE_U16(domain_pd_ + offset.Control_word[i], 0x0f);
-            break;
+                break;
 
 //            case (operation_enable):
 //            {
@@ -683,10 +688,12 @@ void EtherCATInterface::runTask()
 
         // 脉冲 -> 角度(弧度)
         double current_pos; 
-        // current_pos = actual_pos_pulse[i] * robot.m_gearRatio[i] * (M_PI / 360.0f);
-        current_pos = actual_pos_pulse[i] / 250000.0 * (M_PI / 13.1072);
+        // current_pos = actual_pos_pulse[i] / pow(2, m_Encoderbit[i]) / m_GearRatio[i] * M_PI * 2.0f;
+
+        current_pos = (actual_pos_pulse[i] / pow(2, m_Encoderbit[i]) / m_GearRatio[i] * M_PI * 2.0f) + REST_JOINT[i];
+        // current_pos = actual_pos_pulse[i] / 250000.0 * (M_PI / 13.1072);
         cur_state.joint_state[i].position = current_pos;
-        cur_state.joint_state[i].velocity = actual_vel[i] / 250000.0 * (M_PI / 13.1072);
+        cur_state.joint_state[i].velocity = actual_vel[i];
         // cur_state.joint_state[i].torque = actual_torque[i]; 
 
         if (abs(target_pos_pulse[i] - actual_pos_pulse[i]) <= 2)
