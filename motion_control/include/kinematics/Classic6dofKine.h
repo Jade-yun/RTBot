@@ -26,7 +26,7 @@ struct Kine6d_{
 typedef struct Kine6dSol_ Kine6dSol;
 struct Kine6dSol_ {
 	float sol[8][6];
-	unsigned char sol_flag[8][3];
+	int sol_flag[8][3];
 };
 
 void classic6dofForKine(float* q_, Kine6d* pose_);

@@ -11,6 +11,9 @@
 #include <limits>
 #include <fstream>
 #include <algorithm>
+#include "bspline/BSplineSmoothing.h"
+#include "bspline/TargetJointsDataManager.h"
+
 
 
 
@@ -401,7 +404,7 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _star
             
             // 更新当前关节角度
             m_curJoints = target_joints;
-
+            
             // 输出到CSV文件
             // csv_write_counter++;
             // if (csv_write_counter >= CSV_WRITE_INTERVAL) {
@@ -1302,6 +1305,847 @@ void Robot::jogL(int mode, int axis, int _direction)
     std::cout << "jogL - 笛卡尔点动完成" << std::endl;
 }
 
+void Robot::twoMoveL_BSplineTransition(std::array<float, NUM_JOINTS>& first_pose,std::array<float, NUM_JOINTS>& second_pose,const std::array<float, 2>& _speed, const std::array<float, 2>& _start_speed, const std::array<float, 2>& _end_speed)
+{
+
+    struct timespec start, end;
+    // 记录开始时间（CLOCK_MONOTONIC：单调时钟，类似steady_clock）
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
+    
+
+    BSplineSmoothing *smoother = BSplineSmoothing::getInstance(3, 60, 50, 1);
+
+    Kine6d current_pose;
+    classic6dofForKine(m_curJoints.data(), &current_pose);
+
+
+    Point3D start_point;
+
+    start_point.x = current_pose.X;
+    start_point.y = current_pose.Y;
+    start_point.z = current_pose.Z;
+
+
+    LineSegment seg1(start_point, Point3D(first_pose[0],first_pose[1],first_pose[2]));
+    LineSegment seg2(Point3D(first_pose[0],first_pose[1],first_pose[2]), Point3D(second_pose[0],second_pose[1],second_pose[2]));
+    smoother->generateSmoothCurve(seg1, seg2, 1000);
+    Point3D BSpline_start_point = smoother->getSmoothedCurve().front();
+    Point3D BSpline_end_point = smoother->getSmoothedCurve().back();
+
+
+    first_pose[0] = BSpline_start_point.x;
+    first_pose[1] = BSpline_start_point.y;
+    first_pose[2] = BSpline_start_point.z;
+
+
+
+
+    moveL_Avoid_points(first_pose,20,0,20);
+
+
+    moveBSpline(20,20,20);
+
+
+    // moveL_Avoid_points(second_pose,20,20,0);
+
+
+
+    JointDataManager::getInstance()->save_all_change_CSV("all_jointdata.csv");
+
+    // 记录结束时间
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    // 计算时间差（纳秒级）
+    long long duration_ns = (end.tv_sec - start.tv_sec) * 1000000000LL + (end.tv_nsec - start.tv_nsec);
+    double duration_ms = duration_ns / 1000000.0;  // 转换为毫秒
+    std::cout << "B样条平滑计算" << duration_ms << " 毫秒\n";
+
+}
+
+void Robot::moveBSpline(float _speed, float _start_speed, float _end_speed)
+{
+
+    BSplineSmoothing* bsplineSmoothing = BSplineSmoothing::getInstance();
+
+    // 重置状态标志,开始新的运动
+    GlobalParams::isStop = false;
+    GlobalParams::isPause = false;
+    GlobalParams::isResume = false;
+
+
+    // CSV写入计数器
+    int csv_write_counter = 0;
+    const int CSV_WRITE_INTERVAL = 10; // 每隔10个点写入一次
+
+    // 获取当前末端位姿
+    Kine6d current_pose;
+    classic6dofForKine(m_curJoints.data(), &current_pose);
+
+    // 计算起始和目标位置
+    Eigen::Vector3d start_p(current_pose.X, current_pose.Y, current_pose.Z);
+//    Eigen::Vector3d end_p(_pose[0], _pose[1], _pose[2]);
+    
+    // 计算起始和目标姿态四元数
+    // B样条插补时先默认姿态不变
+    Eigen::Quaterniond start_q = Eigen::AngleAxisd(current_pose.C, Eigen::Vector3d::UnitZ()) *
+                                 Eigen::AngleAxisd(current_pose.B, Eigen::Vector3d::UnitY()) *
+                                 Eigen::AngleAxisd(current_pose.A, Eigen::Vector3d::UnitX());
+    
+    Eigen::Quaterniond end_q = Eigen::AngleAxisd(current_pose.C, Eigen::Vector3d::UnitZ()) *
+                               Eigen::AngleAxisd(current_pose.B, Eigen::Vector3d::UnitY()) *
+                               Eigen::AngleAxisd(current_pose.A, Eigen::Vector3d::UnitX());
+
+    // 计算直线距离
+    // double distance = (end_p - start_p).norm();
+    double distance = bsplineSmoothing->getCurveLength();
+    
+    
+    if (distance < 1e-6) {
+        std::cout << "目标位置与当前位置过于接近，运动结束" << std::endl;
+        return;
+    }
+
+    // 设置速度规划器参数
+    VelocityPlanner::PlanningParams params;
+    params.cycleTime = 0.001;    // 1ms插补周期
+    params.maxVelocity = 100.0;  // 笛卡尔空间最大速度 (mm/s)
+    params.maxAcceleration = 200.0;  // 最大加速度 (mm/s²)
+    params.maxJerk = 600.0;  // 最大加加速度 (mm/s³)
+    params.targetVelocity = _speed;  // 用户设定速度
+    params.startVelocity = _start_speed;  // 起始速度
+    params.endVelocity = _end_speed;    // 结束速度
+    params.totalDistance = distance;  // 总距离
+    
+    // 初始化速度规划器
+    if (!m_velocityPlanner.initialize(params)) {
+        std::cerr << "笛卡尔空间速度规划器初始化失败!" << std::endl;
+        return;
+    }
+    
+    std::cout << "开始笛卡尔直线运动，距离: " << distance << " mm" << std::endl;
+
+    // 运动控制循环
+    bool motionCompleted = false;
+    int cycleCount = 0;
+    
+
+    JointDataManager* a = JointDataManager::getInstance();
+
+    while (!motionCompleted) {
+        // 检查暂停状态
+        if (GlobalParams::isPause) {
+            m_velocityPlanner.pause();
+            
+            // 等待恢复
+            while (GlobalParams::isPause && !GlobalParams::isStop) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            
+            // 恢复运动
+            if (!GlobalParams::isStop) {
+                m_velocityPlanner.resume();
+            }
+        }
+        
+        // 处理紧急停止
+        if (GlobalParams::isStop) {
+            m_velocityPlanner.emergencyStop();
+            break;
+        }
+
+        // 获取当前运动状态
+        VelocityPlanner::MotionState state = m_velocityPlanner.getNextState();
+        
+        // 计算插补比例
+        double interp_ratio = state.position / distance;
+        interp_ratio = std::max(0.0, std::min(1.0, interp_ratio));
+        
+        // 位置插值（线性插值）
+        // Eigen::Vector3d current_p = start_p + interp_ratio * (end_p - start_p);
+        Point3D current_p = bsplineSmoothing->get_BSpline_point(interp_ratio);
+        
+        // 姿态插值（球面线性插值）
+        Eigen::Quaterniond current_q = start_q.slerp(interp_ratio, end_q);
+        
+        // 将四元数转换回欧拉角
+        Eigen::Matrix3d R = current_q.toRotationMatrix();
+        Eigen::Vector3d euler = R.eulerAngles(2, 1, 0); // ZYX顺序
+        
+        // 构造当前目标位姿
+        Kine6d target_pose;
+        target_pose.X = current_p.x;
+        target_pose.Y = current_p.y;
+        target_pose.Z = current_p.z;
+        // target_pose.A = euler[2]; // Roll (X)
+        // target_pose.B = euler[1]; // Pitch (Y)
+        // target_pose.C = euler[0]; // Yaw (Z)
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                target_pose.R[i * 3 + j] = R(i, j);
+            }
+        }
+        target_pose.fgR = 1;
+        
+        // 通过逆向运动学求解关节角度
+        Kine6dSol q_sol;
+        classic6dofInvKine(&target_pose, m_curJoints.data(), &q_sol);
+        
+        // 选择最优解
+        bool valid[8];
+        int best = -1;
+        float best_dist = 1e6;
+        for (int k = 0; k < 8; ++k) {
+            valid[k] = true;
+            for (int j = 0; j < NUM_JOINTS; ++j) {
+                if (q_sol.sol[k][j] < m_angleLimitMin[j] || q_sol.sol[k][j] > m_angleLimitMax[j]) {
+                    valid[k] = false;
+                    break;
+                }
+            }
+            if (valid[k]) {
+                float dist = 0;
+                for (int j = 0; j < NUM_JOINTS; ++j)
+                    dist += std::pow(m_curJoints[j] - q_sol.sol[k][j], 2);
+                if (dist < best_dist) {
+                    best = k;
+                    best_dist = dist;
+                }
+            }
+        }
+        
+        if (best >= 0) {
+            std::array<float, NUM_JOINTS> target_joints;
+            for (int j = 0; j < NUM_JOINTS; ++j)
+                target_joints[j] = q_sol.sol[best][j];
+            
+            // 更新当前关节角度
+            m_curJoints = target_joints;
+            a->addData(m_curJoints,q_sol.sol_flag[best][0],q_sol.sol_flag[best][1],q_sol.sol_flag[best][2]);
+
+            // 发送关节角度到底层控制器
+            // moveJoints(target_joints);
+        } else {
+            // std::cout << "逆运动学求解失败，运动停止" << std::endl;
+            break;
+        }
+        
+        // 检查运动是否完成
+        motionCompleted = m_velocityPlanner.isCompleted();
+        
+        
+        // 等待下一个插补周期
+        // std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    
+    if (GlobalParams::isStop) {
+        std::cout << "直线插补停止" << std::endl;
+    } else {
+        std::cout << "直线插补完成" << std::endl;
+    }
+
+
+
+    a->all_changed_jointDataList.insert(a->all_changed_jointDataList.end(),a->m_jointDataList.begin(),a->m_jointDataList.end());
+    a->clear();
+}
+
+void Robot::moveL_Avoid_points(std::array<float, NUM_JOINTS> tar_pose, float _speed, float _start_speed, float _end_speed)
+{
+    
+    JointDataManager* a = JointDataManager::getInstance();
+
+    struct timespec start, end;
+    // 记录开始时间（CLOCK_MONOTONIC：单调时钟，类似steady_clock）
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
+
+    // 用于储存奇异区域
+    long long index = 0L;
+    long long _start_index =0L;
+    long long _end_index = 0L;
+    bool singular_flag = false;
+
+
+    // 重置状态标志,开始新的运动
+    GlobalParams::isStop = false;
+    GlobalParams::isPause = false;
+    GlobalParams::isResume = false;
+
+
+    std::array<float, NUM_JOINTS> tmp_curJoints = m_curJoints;
+
+    // 获取当前末端位姿
+    Kine6d current_pose;
+    classic6dofForKine(tmp_curJoints.data(), &current_pose);
+
+    // 计算起始和目标位置
+    Eigen::Vector3d start_p(current_pose.X, current_pose.Y, current_pose.Z);
+    Eigen::Vector3d end_p(tar_pose[0], tar_pose[1], tar_pose[2]);
+    
+    // 计算起始和目标姿态四元数
+    Eigen::Quaterniond start_q = Eigen::AngleAxisd(current_pose.C, Eigen::Vector3d::UnitZ()) *
+                                 Eigen::AngleAxisd(current_pose.B, Eigen::Vector3d::UnitY()) *
+                                 Eigen::AngleAxisd(current_pose.A, Eigen::Vector3d::UnitX());
+    
+    Eigen::Quaterniond end_q = Eigen::AngleAxisd(tar_pose[5], Eigen::Vector3d::UnitZ()) *
+                               Eigen::AngleAxisd(tar_pose[4], Eigen::Vector3d::UnitY()) *
+                               Eigen::AngleAxisd(tar_pose[3], Eigen::Vector3d::UnitX());
+
+    // 计算直线距离
+    double distance = (end_p - start_p).norm();
+    
+    if (distance < 1e-6) {
+        std::cout << "目标位置与当前位置过于接近，运动结束" << std::endl;
+        return;
+    }
+
+    // 设置速度规划器参数
+    VelocityPlanner::PlanningParams params;
+    params.cycleTime = 0.001;    // 1ms插补周期
+    params.maxVelocity = 100.0;  // 笛卡尔空间最大速度 (mm/s)
+    params.maxAcceleration = 200.0;  // 最大加速度 (mm/s²)
+    params.maxJerk = 600.0;  // 最大加加速度 (mm/s³)
+    params.targetVelocity = _speed;  // 用户设定速度
+    params.startVelocity = _start_speed;  // 起始速度
+    params.endVelocity = _end_speed;    // 结束速度
+    params.totalDistance = distance;  // 总距离
+    
+    // 初始化速度规划器
+    if (!m_velocityPlanner.initialize(params)) {
+        std::cerr << "笛卡尔空间速度规划器初始化失败!" << std::endl;
+        return;
+    }
+    
+    std::cout << "开始笛卡尔直线运动（奇异点规避），距离: " << distance << " mm" << std::endl;
+
+    // 运动控制循环
+    bool motionCompleted = false;
+    int cycleCount = 0;
+
+    // 奇异区域分隔
+    JointDataManager::getInstance()->addData({0,0,0,0,0,0}, 0, 0, 0);
+    
+    while (!motionCompleted) {
+
+        index++;
+        
+        // 检查暂停状态
+        if (GlobalParams::isPause) {
+            m_velocityPlanner.pause();
+            
+            // 等待恢复
+            while (GlobalParams::isPause && !GlobalParams::isStop) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            
+            // 恢复运动
+            if (!GlobalParams::isStop) {
+                m_velocityPlanner.resume();
+            }
+        }
+        
+        // 处理紧急停止
+        if (GlobalParams::isStop) {
+            m_velocityPlanner.emergencyStop();
+            break;
+        }
+
+        // 获取当前运动状态
+        VelocityPlanner::MotionState state = m_velocityPlanner.getNextState();
+        
+        // 计算插补比例
+        double interp_ratio = state.position / distance;
+        interp_ratio = std::max(0.0, std::min(1.0, interp_ratio));
+        
+        // 位置插值（线性插值）
+        Eigen::Vector3d current_p = start_p + interp_ratio * (end_p - start_p);
+        
+        // 姿态插值（球面线性插值）
+        Eigen::Quaterniond current_q = start_q.slerp(interp_ratio, end_q);
+        
+        // 将四元数转换回欧拉角
+        Eigen::Matrix3d R = current_q.toRotationMatrix();
+        Eigen::Vector3d euler = R.eulerAngles(2, 1, 0); // ZYX顺序
+        
+        // 构造当前目标位姿
+        Kine6d target_pose;
+        target_pose.X = current_p.x();
+        target_pose.Y = current_p.y();
+        target_pose.Z = current_p.z();
+        // target_pose.A = euler[2]; // Roll (X)
+        // target_pose.B = euler[1]; // Pitch (Y)
+        // target_pose.C = euler[0]; // Yaw (Z)
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                target_pose.R[i * 3 + j] = R(i, j);
+            }
+        }
+        target_pose.fgR = 1;
+        
+        // 通过逆向运动学求解关节角度
+        Kine6dSol q_sol;
+        classic6dofInvKine(&target_pose, tmp_curJoints.data(), &q_sol);
+        
+        // 计算是否是奇异区域
+        bool isSingular = (q_sol.sol_flag[0][0] == -1) || (q_sol.sol_flag[0][2] == -1) || (q_sol.sol_flag[0][1] == -1);
+
+        if(isSingular)
+        {
+            // 刚进入奇异区域
+            if(_start_index == 0)
+            {
+                _start_index = index;
+            }
+            else
+            {
+                _end_index = index;
+            }
+        }
+        else
+        {
+            if(_start_index != _end_index)
+            {
+                _start_index = 0;
+                _end_index = 0;
+                singular_flag = true;
+            }
+        }
+
+
+        // 选择最优解
+        int is_over_limit[8] = {0,0,0,0,0,0,0,0};
+        bool valid[8];
+        int best = -1;
+        float best_dist = 1e6;
+        for (int k = 0; k < 8; ++k) {
+            valid[k] = true;
+            for (int j = 0; j < NUM_JOINTS; ++j) {
+                if (q_sol.sol[k][j] < m_angleLimitMin[j] || q_sol.sol[k][j] > m_angleLimitMax[j]) {
+                    valid[k] = false;
+                    is_over_limit[k] = 1;
+                    break;
+                }
+            }
+            if (valid[k]) {
+                float dist = 0;
+                for (int j = 0; j < NUM_JOINTS; ++j)
+                    dist += std::pow(tmp_curJoints[j] - q_sol.sol[k][j], 2);
+                if (dist < best_dist) {
+                    best = k;
+                    best_dist = dist;
+                }
+            }
+        }
+        
+        if (best >= 0) {
+            std::array<float, NUM_JOINTS> target_joints;
+            for (int j = 0; j < NUM_JOINTS; ++j)
+                target_joints[j] = q_sol.sol[best][j];
+            
+            // 更新当前关节角度
+            tmp_curJoints = target_joints;
+
+            if(isSingular)
+            {
+                a->addData(target_joints, q_sol.sol_flag[best][0], q_sol.sol_flag[best][1], q_sol.sol_flag[best][2]);
+            }
+
+            if(singular_flag)
+            {
+                a->addData(target_joints, q_sol.sol_flag[best][0], q_sol.sol_flag[best][1], q_sol.sol_flag[best][2]);
+                a->addData({0,0,0,0,0,0}, 0, 0, 0);
+                singular_flag = false;
+            }
+
+        } else {
+            // std::cout << "逆运动学求解失败，运动停止" << std::endl;
+        }
+        
+        // 检查运动是否完成
+        motionCompleted = m_velocityPlanner.isCompleted();
+        
+
+        
+        // 等待下一个插补周期
+        // std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    
+    if (GlobalParams::isStop) {
+        std::cout << "直线插补停止" << std::endl;
+    } else {
+        std::cout << "直线插补完成" << std::endl;
+    }
+
+
+    // 记录结束时间
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    // 计算时间差（纳秒级）
+    long long duration_ns = (end.tv_sec - start.tv_sec) * 1000000000LL + (end.tv_nsec - start.tv_nsec);
+    double duration_ms = duration_ns / 1000000.0;  // 转换为毫秒
+    std::cout << "笛卡尔直线运动预计算" << duration_ms << " 毫秒\n";
+
+//    a->save_all_CSV("all_joint.csv");
+//    a->save_CSV("signular.csv");
+
+
+    if(a->collect_singular_area())
+    {
+        a->m_jointDataList.clear();
+        moveL_handle(tar_pose,_speed,_start_speed,_end_speed);
+    }
+    else
+    {
+        a->m_jointDataList.clear();
+        avoid_moveL(tar_pose,_speed,_start_speed,_end_speed);
+    }
+    a->all_changed_jointDataList.insert(a->all_changed_jointDataList.end(),a->m_jointDataList.begin(),a->m_jointDataList.end());
+    a->clear();
+
+}
+
+void Robot::moveL_handle(std::array<float, 6> tar_tmp, float _speed, float _start_speed, float _end_speed)
+{
+    int double_index = 0;
+    std::array<float, NUM_JOINTS> cur_joint_pos;     // 后续用于走分段moveL
+    Kine6d tmp_pose;                  // 目标位姿
+    if(JointDataManager::getInstance()->singular_pointsList.empty())
+    {
+        moveL(tar_tmp,_speed,_start_speed,_end_speed);
+        return;
+    }
+    for(const auto &data : JointDataManager::getInstance()->singular_pointsList)
+    {
+        if(double_index % 2 == 0)
+        {
+            cur_joint_pos = data.targetJoints;
+            classic6dofForKine(cur_joint_pos.data(), &tmp_pose);                             // 目标位姿 正解获取
+            std::array<float, NUM_JOINTS> tmp = {tmp_pose.X,tmp_pose.Y,tmp_pose.Z,tmp_pose.A,tmp_pose.B,tmp_pose.C};;
+            avoid_moveL(tmp,_speed,_start_speed,_speed);
+        }
+        else
+        {
+            cur_joint_pos = data.targetJoints;
+            avoid_moveJ(cur_joint_pos,_speed,_speed,_speed);        // 奇异区域的过渡速度保持一致
+            JointDataManager::getInstance()->combine(3000);
+        }
+        double_index++;
+    }
+    classic6dofForKine(cur_joint_pos.data(), &tmp_pose);                             // 目标位姿 正解获取
+
+    if(fabs(tmp_pose.X -300) >= 0.1 || fabs(tmp_pose.Y -0) >= 0.1 || fabs(tmp_pose.Z -600) >= 0.1)
+    {
+        avoid_moveL(tar_tmp,_speed,_speed,_end_speed);   // 起始速度为_speed和之前前面的衔接
+    }
+}
+
+
+void Robot::avoid_moveJ(const std::array<float, NUM_JOINTS>& _joint_pos, float _speed, float _start_speed, float _end_speed)
+{
+    // 重置状态标志,开始新的运动
+    GlobalParams::isStop = false;
+    GlobalParams::isPause = false;
+    GlobalParams::isResume = false;
+    
+    // 检查目标关节位置是否在限制范围内
+    for (int i = 0; i < NUM_JOINTS; i++) {
+        if (_joint_pos[i] > m_angleLimitMax[i] || _joint_pos[i] < m_angleLimitMin[i]) {
+            std::cerr << "关节 " << i << " 目标位置超出限制范围!" << std::endl;
+            return;
+        }
+    }
+    
+    // 计算每个关节的运动距离，找出最大距离
+    std::array<double, NUM_JOINTS> jointDistances;
+    double maxDistance = 0.0;
+    int maxDistanceJoint = 0;
+    
+    for (int i = 0; i < NUM_JOINTS; i++) {
+        jointDistances[i] = std::abs(_joint_pos[i] - m_curJoints[i]);
+        if (jointDistances[i] > maxDistance) {
+            maxDistance = jointDistances[i];
+            maxDistanceJoint = i;
+        }
+    }
+    
+    // 如果距离太小，直接返回
+    if (maxDistance < 1e-6) {
+        std::cout << "目标位置与当前位置相同，无需移动" << std::endl;
+        return;
+    }
+    
+    // 设置主规划器参数（基于最长距离关节）
+    VelocityPlanner::PlanningParams params;
+    params.cycleTime = 0.001;    // 1ms插补周期
+    params.maxVelocity = 20 * M_PI / 180.0;  // 直接使用关节最大速度作为系统限制
+    params.maxAcceleration = 20 * M_PI / 180.0;  // 不使用比例系数
+    params.maxJerk = 60 * M_PI / 180.0;
+    params.targetVelocity = _speed * M_PI / 180.0;  // 直接使用用户输入的设定速度
+    params.startVelocity = _start_speed * M_PI / 180.0;  // 
+    params.endVelocity = _end_speed * M_PI / 180.0;    // 
+    params.totalDistance = maxDistance;  // 使用最大距离作为规划距离
+    
+    // 初始化主速度规划器
+    if (!m_velocityPlanner.initialize(params)) {
+        std::cerr << "关节空间速度规划器初始化失败!" << std::endl;
+        return;
+    }
+    
+    // 记录起始关节位置
+    std::array<float, NUM_JOINTS> startJoints = m_curJoints;
+    
+    // 执行插补循环
+    bool motionCompleted = false;
+    int cycleCount = 0;
+
+    while (!motionCompleted && !GlobalParams::isStop) {
+        // 检查暂停状态
+        if (GlobalParams::isPause) {
+            m_velocityPlanner.pause();
+            
+            // 等待恢复
+            while (GlobalParams::isPause && !GlobalParams::isStop) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                HighLevelCommand cmd;
+                if (shm().high_prio_cmd_queue.pop(cmd))
+                {
+                    handleHighPriorityCommand(cmd);
+                }
+            }
+            
+            // 恢复运动
+            if (!GlobalParams::isStop && GlobalParams::isResume) {
+                m_velocityPlanner.resume();
+            }
+        }
+        
+        // 处理紧急停止
+        if (GlobalParams::isStop) {
+            m_velocityPlanner.emergencyStop();
+            break;
+        }
+        
+        // 获取当前运动状态
+        VelocityPlanner::MotionState state = m_velocityPlanner.getNextState();
+        
+        // 计算插补比例系数
+        double lambda = state.position / maxDistance;
+        
+        // 限制插补比例在[0,1]范围内
+        lambda = std::max(0.0, std::min(1.0, lambda));
+
+        
+        // 根据插补比例计算所有关节的当前位置
+        for (int i = 0; i < NUM_JOINTS; i++) {
+            // 使用插补比例系数同步所有关节
+            m_curJoints[i] = startJoints[i] + lambda * (_joint_pos[i] - startJoints[i]);
+            
+            // 计算关节速度（用于监控）
+            if (jointDistances[i] > 1e-6) {
+                double jointDirection = (_joint_pos[i] > startJoints[i]) ? 1.0 : -1.0;
+                m_curVelocity[i] = jointDirection * state.velocity * (jointDistances[i] / maxDistance);
+            } else {
+                m_curVelocity[i] = 0.0;
+            }
+            
+            // 限制关节位置在安全范围内
+            m_curJoints[i] = std::max(m_angleLimitMin[i], 
+                                     std::min(m_angleLimitMax[i], m_curJoints[i]));
+        }
+        
+        // 检查运动是否完成
+        motionCompleted = m_velocityPlanner.isCompleted();
+        
+        // 发送关节位置到硬件
+        // moveJoints(m_curJoints);
+        JointDataManager::getInstance()->tmpaddData(m_curJoints, 1, 1, 1);
+        
+        // 等待下一个插补周期
+        // std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    
+    if (GlobalParams::isStop) {
+        std::cout << "关节插补停止" << std::endl;
+    } else {
+        std::cout << "关节插补完成" << std::endl;
+    }
+}
+
+
+void Robot::avoid_moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _start_speed, float _end_speed)
+{
+    // 重置状态标志,开始新的运动
+    GlobalParams::isStop = false;
+    GlobalParams::isPause = false;
+    GlobalParams::isResume = false;
+
+    // CSV写入计数器
+    int csv_write_counter = 0;
+    const int CSV_WRITE_INTERVAL = 10; // 每隔10个点写入一次
+
+    // 获取当前末端位姿
+    Kine6d current_pose;
+    classic6dofForKine(m_curJoints.data(), &current_pose);
+
+    // 计算起始和目标位置
+    Eigen::Vector3d start_p(current_pose.X, current_pose.Y, current_pose.Z);
+    Eigen::Vector3d end_p(_pose[0], _pose[1], _pose[2]);
+    
+    // 计算起始和目标姿态四元数
+    Eigen::Quaterniond start_q = Eigen::AngleAxisd(current_pose.C, Eigen::Vector3d::UnitZ()) *
+                                 Eigen::AngleAxisd(current_pose.B, Eigen::Vector3d::UnitY()) *
+                                 Eigen::AngleAxisd(current_pose.A, Eigen::Vector3d::UnitX());
+    
+    Eigen::Quaterniond end_q = Eigen::AngleAxisd(_pose[5], Eigen::Vector3d::UnitZ()) *
+                               Eigen::AngleAxisd(_pose[4], Eigen::Vector3d::UnitY()) *
+                               Eigen::AngleAxisd(_pose[3], Eigen::Vector3d::UnitX());
+
+    // 计算直线距离
+    double distance = (end_p - start_p).norm();
+    
+    if (distance < 1e-6) {
+        std::cout << "目标位置与当前位置过于接近，运动结束" << std::endl;
+        return;
+    }
+
+    // 设置速度规划器参数
+    VelocityPlanner::PlanningParams params;
+    params.cycleTime = 0.001;    // 1ms插补周期
+    params.maxVelocity = 100.0;  // 笛卡尔空间最大速度 (mm/s)
+    params.maxAcceleration = 200.0;  // 最大加速度 (mm/s²)
+    params.maxJerk = 600.0;  // 最大加加速度 (mm/s³)
+    params.targetVelocity = _speed;  // 用户设定速度
+    params.startVelocity = _start_speed;  // 起始速度
+    params.endVelocity = _end_speed;    // 结束速度
+    params.totalDistance = distance;  // 总距离
+    
+    // 初始化速度规划器
+    if (!m_velocityPlanner.initialize(params)) {
+        std::cerr << "笛卡尔空间速度规划器初始化失败!" << std::endl;
+        return;
+    }
+    
+    std::cout << "开始笛卡尔直线运动，距离: " << distance << " mm" << std::endl;
+
+    // 运动控制循环
+    bool motionCompleted = false;
+    int cycleCount = 0;
+    
+    while (!motionCompleted) {
+        // 检查暂停状态
+        if (GlobalParams::isPause) {
+            m_velocityPlanner.pause();
+            
+            // 等待恢复
+            while (GlobalParams::isPause && !GlobalParams::isStop) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            
+            // 恢复运动
+            if (!GlobalParams::isStop) {
+                m_velocityPlanner.resume();
+            }
+        }
+        
+        // 处理紧急停止
+        if (GlobalParams::isStop) {
+            m_velocityPlanner.emergencyStop();
+            break;
+        }
+
+        // 获取当前运动状态
+        VelocityPlanner::MotionState state = m_velocityPlanner.getNextState();
+        
+        // 计算插补比例
+        double interp_ratio = state.position / distance;
+        interp_ratio = std::max(0.0, std::min(1.0, interp_ratio));
+        
+        // 位置插值（线性插值）
+        Eigen::Vector3d current_p = start_p + interp_ratio * (end_p - start_p);
+        
+        // 姿态插值（球面线性插值）
+        Eigen::Quaterniond current_q = start_q.slerp(interp_ratio, end_q);
+        
+        // 将四元数转换回欧拉角
+        Eigen::Matrix3d R = current_q.toRotationMatrix();
+        Eigen::Vector3d euler = R.eulerAngles(2, 1, 0); // ZYX顺序
+        
+        // 构造当前目标位姿
+        Kine6d target_pose;
+        target_pose.X = current_p.x();
+        target_pose.Y = current_p.y();
+        target_pose.Z = current_p.z();
+        // target_pose.A = euler[2]; // Roll (X)
+        // target_pose.B = euler[1]; // Pitch (Y)
+        // target_pose.C = euler[0]; // Yaw (Z)
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                target_pose.R[i * 3 + j] = R(i, j);
+            }
+        }
+        target_pose.fgR = 1;
+        
+        // 通过逆向运动学求解关节角度
+        Kine6dSol q_sol;
+        classic6dofInvKine(&target_pose, m_curJoints.data(), &q_sol);
+        
+        // 选择最优解
+        bool valid[8];
+        int best = -1;
+        float best_dist = 1e6;
+        for (int k = 0; k < 8; ++k) {
+            valid[k] = true;
+            for (int j = 0; j < NUM_JOINTS; ++j) {
+                if (q_sol.sol[k][j] < m_angleLimitMin[j] || q_sol.sol[k][j] > m_angleLimitMax[j]) {
+                    valid[k] = false;
+                    break;
+                }
+            }
+            if (valid[k]) {
+                float dist = 0;
+                for (int j = 0; j < NUM_JOINTS; ++j)
+                    dist += std::pow(m_curJoints[j] - q_sol.sol[k][j], 2);
+                if (dist < best_dist) {
+                    best = k;
+                    best_dist = dist;
+                }
+            }
+        }
+        
+        if (best >= 0) {
+            std::array<float, NUM_JOINTS> target_joints;
+            for (int j = 0; j < NUM_JOINTS; ++j)
+                target_joints[j] = q_sol.sol[best][j];
+            
+            // 更新当前关节角度
+            m_curJoints = target_joints;
+
+            JointDataManager::getInstance()->addData(m_curJoints, q_sol.sol_flag[best][0], q_sol.sol_flag[best][1], q_sol.sol_flag[best][2]);
+
+            
+            // 发送关节角度到底层控制器
+            // moveJoints(target_joints);
+        } else {
+            // std::cout << "逆运动学求解失败，运动停止" << std::endl;
+
+        }
+        
+         // 检查运动是否完成
+         motionCompleted = m_velocityPlanner.isCompleted();
+        
+        
+        // 等待下一个插补周期
+        // std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    
+    if (GlobalParams::isStop) {
+        std::cout << "直线插补停止" << std::endl;
+    } else {
+        std::cout << "直线插补完成" << std::endl;
+    }
+
+    // JointDataManager::getInstance()->save_CSV("moveL_data.csv");
+}
+
 void Robot::moveJoints(const std::array<float, NUM_JOINTS>& _joints)
 {
     // 关节空间插补指令
@@ -1988,6 +2832,33 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
         case HighLevelCommandType::TCPCalibration:
         {
             testTCPCalibration();
+            break;
+        }
+        case HighLevelCommandType::MoveLLBSpline:
+        {
+            std::array<float, 6> first_pose;
+            std::array<float, 6> second_pose;
+            std::copy(std::begin(cmd.movell_BSpline_params.first_pose),
+                      std::end(cmd.movell_BSpline_params.first_pose),
+                      first_pose.begin());
+            std::copy(std::begin(cmd.movell_BSpline_params.second_pose),
+                      std::end(cmd.movell_BSpline_params.second_pose),
+                      second_pose.begin());
+
+            std::array<float, 2> _speed;
+            std::array<float, 2> _start_speed;
+            std::array<float, 2> _end_speed;
+            std::copy(std::begin(cmd.movell_BSpline_params.velocity),
+                      std::end(cmd.movell_BSpline_params.velocity),
+                      _speed.begin());
+            std::copy(std::begin(cmd.movell_BSpline_params.startspeed),
+                      std::end(cmd.movell_BSpline_params.startspeed),
+                      _start_speed.begin());
+            std::copy(std::begin(cmd.movell_BSpline_params.endspeed),
+                      std::end(cmd.movell_BSpline_params.endspeed),
+                      _end_speed.begin());
+
+            twoMoveL_BSplineTransition(first_pose,second_pose,_speed,_start_speed,_end_speed);
             break;
         }
         default:

@@ -42,13 +42,24 @@ public:
     bool addManualTCPCalibrationPoint(float x, float y, float z, float a, float b, float c);
 
     //
-    void moveJ(const std::array<float, NUM_JOINTS>& joint_pos, float _speed, float _start_speed, float _end_speed);
+    void moveJ(const std::array<float, NUM_JOINTS>& _joint_pos, float _speed, float _start_speed, float _end_speed);
     void moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _start_speed, float _end_speed);
     void moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_JOINTS> end_pose, float speed, float start_speed, float end_speed);
     void moveCF(std::array<float, NUM_JOINTS> pose1, std::array<float, NUM_JOINTS> pose2, float speed);
     void moveJoints(const std::array<float, NUM_JOINTS>& _joints);
     void jogJ(int _mode, int _joint_index, int _direction);
     void jogL(int _mode, int _axis, int _direction);
+
+
+    // B样条平滑
+    // 奇异点规避
+    void twoMoveL_BSplineTransition(std::array<float, NUM_JOINTS>& first_pose,std::array<float, NUM_JOINTS>& second_pose,const std::array<float, 2>& _speed, const std::array<float, 2>& _start_speed, const std::array<float, 2>& _end_speed);
+    void moveBSpline( float _speed, float _start_speed, float _end_speed);
+    void moveL_Avoid_points(std::array<float, NUM_JOINTS> tar_pose,  float _speed, float _start_speed, float _end_speed);
+    void moveL_handle(std::array<float,6> tar_tmp, float _speed, float _start_speed, float _end_speed);
+    void avoid_moveJ(const std::array<float, NUM_JOINTS>& _joint_pos, float _speed, float _start_speed, float _end_speed);
+    void avoid_moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _start_speed, float _end_speed);
+
     // 设置速度
     void setSpeed(float _speed);
     // 调用运动学正解，更新位姿

@@ -34,6 +34,7 @@ enum class HighLevelCommandType : uint8_t {
     JogJ,     // 关节点动（Jog Joint）
     JogL,     // 笛卡尔点动（Jog Linear）
     TCPCalibration, // TCP标定指令
+    MoveLLBSpline, // 笛卡尔空间两段移动中间加B样条平滑
 };
 
 // 机械结构参数
@@ -114,6 +115,16 @@ struct HighLevelCommand {
             float startspeed;
             float endspeed;
         } movel_params;
+
+        // 笛卡尔空间两段移动中间加B样条平滑
+        struct {
+            float first_pose[6]; // 第一段moveL位姿
+            float second_pose[6]; // 第二段moveL位姿
+            float velocity[2];
+            float acceleration[2];
+            float startspeed[2];
+            float endspeed[2];
+        } movell_BSpline_params;
 
         // 圆弧插补移动
         struct {
