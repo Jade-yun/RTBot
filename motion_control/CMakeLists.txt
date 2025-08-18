@@ -19,6 +19,7 @@ target_include_directories(motion_control PRIVATE
     ${CMAKE_SOURCE_DIR}/third_party/include
     ${CMAKE_SOURCE_DIR}/common/include
     ${CMAKE_SOURCE_DIR}/third_party/include/readerwriterqueue/
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_link_libraries(motion_control PRIVATE

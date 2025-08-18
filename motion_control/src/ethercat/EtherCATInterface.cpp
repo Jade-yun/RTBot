@@ -12,6 +12,8 @@
 #include "Parameters/GlobalParameters.h"
 #include <chrono>
 
+#include "Robot.h"
+
 
 #ifdef USE_DYNAMICS_MODEL
 #include "dynamics/dynamical_model.h"
@@ -31,14 +33,14 @@ DynamicalModel model;
 
 #define TIMESPEC2NS(T) ((uint64_t)(T).tv_sec * NSEC_PER_SEC + (T).tv_nsec)
 
-// constexpr int NUM_SLAVES = 1;
-constexpr int NUM_SLAVES = 6;
+constexpr int NUM_SLAVES = 1;
+// constexpr int NUM_SLAVES = 6;
 
 uint32_t Joint_Zero_Offset[6] = {500000, 150000}; //记录偏移
 
 uint32_t SlaveVID[] = {0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7};
-uint32_t SlavePID[] = {0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402};
-// uint32_t SlavePID[] = {0x005e0402, 0x006b0402, 0x005e0402, 0x005e0402, 0x005e0402, 0x005e0402};
+// uint32_t SlavePID[] = {0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402};
+uint32_t SlavePID[] = {0x005e0402, 0x006b0402, 0x005e0402, 0x005e0402, 0x005e0402, 0x005e0402};
 // #define PRODUCT_ID 0x005e0402, 0x006b0402, 0x006b0402;
 
 
@@ -563,7 +565,7 @@ void EtherCATInterface::runTask()
     static uint32_t print_cnt = 0;
     if (print_cnt == 100)
     {
-        printf("Current pulse: %d\n", actual_pos_pulse[0]);   
+        // printf("Current pulse: %d\n", actual_pos_pulse[0]);   
         // printf("target pulse: %d %d\n",target_pos_pulse[0], target_pos_pulse[1]);
         // printf("Joint Velocity: %d %d\n", actual_vel[0], actual_vel[1]);
 
@@ -587,7 +589,7 @@ void EtherCATInterface::runTask()
             for(int i = 0; i < NUM_SLAVES; i++) 
             {
 
-                target_pos_pulse[i] = montor_cmd.joint_pos[i] + REST_JOINT[i];
+                target_pos_pulse[i] = montor_cmd.joint_pos[i];
             } 
         }
         
@@ -682,6 +684,7 @@ void EtherCATInterface::runTask()
 
     // 传递电机状态 以供其他模块使用
     RobotState cur_state;
+    Robot parm;
     bool moveFlag = false;
     for (int i = 0; i < NUM_SLAVES; i++)
     {
@@ -690,7 +693,7 @@ void EtherCATInterface::runTask()
         double current_pos; 
         // current_pos = actual_pos_pulse[i] / pow(2, m_Encoderbit[i]) / m_GearRatio[i] * M_PI * 2.0f;
 
-        current_pos = (actual_pos_pulse[i] / pow(2, m_Encoderbit[i]) / m_GearRatio[i] * M_PI * 2.0f) + REST_JOINT[i];
+        current_pos = (actual_pos_pulse[i] / pow(2, parm.m_Encoderbit[i]) / parm.m_GearRatio[i] * M_PI * 2.0f) + parm.REST_JOINT[i];
         // current_pos = actual_pos_pulse[i] / 250000.0 * (M_PI / 13.1072);
         cur_state.joint_state[i].position = current_pos;
         cur_state.joint_state[i].velocity = actual_vel[i];

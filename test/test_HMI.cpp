@@ -16,6 +16,16 @@ int main() {
     RobotState state;
     int index = 0;
 
+    // 启动后台线程：持续打印“当前自动运动索引”，每200ms刷新一次（单行刷新）
+    std::thread([](){
+        while (true) {
+            auto cur_idx = shm().cur_cmd_index.load();
+            // std::cout << "\r[当前自动运动索引] " << cur_idx << "    " << std::flush;
+            std::cout << "[当前自动运动索引] " << cur_idx << std::endl;
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+    }).detach();
+
     while (true) 
     {
         if (shm().state_buffer.read(state))
@@ -25,12 +35,18 @@ int main() {
             std::cout << "\n";
         }
 
+        // // 显示当前自动运动指令索引（仅MoveJ/MoveL/MoveC/BSpline时由RT侧填入）
+        // {
+        //     auto cur_idx = shm().cur_cmd_index.load();
+        //     std::cout << "[当前自动运动索引] " << cur_idx << std::endl;
+        // }
+
         std::cout << "=== Robot Command Line Interface ===\n";
         std::cout << "----------------AUTO----------------\n";
-        std::cout << "Use >x,x,x,x,x,x,speed for MoveJ (speed <= 20)\n";
-        std::cout << "Use @x,x,x,x,x,x,speed for MoveL (speed <= 70)\n";
-        std::cout << "Use #(x,x,x,x,x,x),(x,x,x,x,x,x),speed for MoveC (speed <= 70)\n";
-        std::cout << "Use %(x,x,x,x,x,x,x,x,x)%(x,x,x,x,x,x,x,x,x),speed for MoveLL_BSpline (speed <= 20)\n";           
+        std::cout << "Use >x,x,x,x,x,x,speed for MoveJ\n";
+        std::cout << "Use @x,x,x,x,x,x,speed for MoveL\n";
+        std::cout << "Use #(x,x,x,x,x,x),(x,x,x,x,x,x),speed for MoveC\n";
+        std::cout << "Use %(x,x,x,x,x,x,x,x,x)%(x,x,x,x,x,x,x,x,x),speed for MoveLL_BSpline\n";           
         std::cout << "---------------MANUAL---------------\n";
         std::cout << "Use j<mode><joint_index><direction> for JogJ (mode:0连续,1微动; joint_index:0-5; direction:1正向,0负向)\n";
         std::cout << "Use l<mode><axis><direction> for JogL (mode:0连续,1微动; axis:1-6; direction:1正向,0负向)\n";
@@ -50,16 +66,14 @@ int main() {
 
         std::memset(&cmd, 0, sizeof(cmd));
         if (cmd_str[0] == 'q') {
-            index++;
             cmd.command_type = HighLevelCommandType::Stop;
-            cmd.command_index = index;
             // cmd.target_joint_pos[0] = 0;
+            index = 0;
+            cmd.command_index = index;
         }
         else if(cmd_str[0] == 'h')
         {
-            index++;
             cmd.command_type = HighLevelCommandType::Homing;
-            cmd.command_index = index;
         }
         else if (cmd_str[0] == '#')
         {
@@ -113,12 +127,6 @@ int main() {
             
             if (argNum < 8) continue;
 
-            if (speed > 20)
-            {
-                std::cout << "输入速度超出限制,已将速度改为20!\n";
-                speed = 20;
-            }
-            
             // 转换为弧度
             for (int i = 0; i < 6; i++)
             {
@@ -163,15 +171,11 @@ int main() {
         }
         else if (cmd_str[0] == 'p')
         {
-            index++;
             cmd.command_type = HighLevelCommandType::Pause;
-            cmd.command_index = index;
         }
         else if (cmd_str[0] == 'r')
         {
-            index++;
             cmd.command_type = HighLevelCommandType::Resume;
-            cmd.command_index = index;
         }
         else if (cmd_str[0] == 'j' && cmd_str.length() >= 4)
         {
@@ -182,9 +186,7 @@ int main() {
             if ((mode == 0 || mode == 1) && joint_index >= 0 && joint_index < NUM_JOINTS &&
                 (direction == 1 || direction == 0)) // 方向 '1' 正向, '0' 负向
             {
-                index++;
                 cmd.command_type = HighLevelCommandType::JogJ;
-                cmd.command_index = index;
                 cmd.jogj_params.mode = mode;
                 cmd.jogj_params.joint_index = joint_index;
                 cmd.jogj_params.direction = direction;
@@ -207,9 +209,7 @@ int main() {
             if ((mode == 0 || mode == 1) && (axis == 1 || axis == 2 || axis == 3 || axis == 4 || axis == 5 || axis == 6) &&
                 (direction == 1 || direction == 0))
             {
-                index++;
                 cmd.command_type = HighLevelCommandType::JogL;
-                cmd.command_index = index;
                 cmd.jogl_params.mode = mode;
                 cmd.jogl_params.axis = axis;
                 cmd.jogl_params.direction = direction;
@@ -224,9 +224,7 @@ int main() {
         }
         else if (cmd_str == "tcp")
         {
-            index++;
             cmd.command_type = HighLevelCommandType::TCPCalibration;
-            cmd.command_index = index;
         }
         else if (cmd_str[0] == '%')
         {

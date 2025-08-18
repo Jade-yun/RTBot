@@ -44,7 +44,62 @@ void Robot::init()
     m_angleLimitMin[4] = -M_PI * 123.0f / 180.0f;
     m_angleLimitMax[5] = M_PI * 455.0f / 180.0f;
     m_angleLimitMin[5] = -M_PI * 455.0f / 180.0f;
-    
+
+#if 0  //初始参数读取
+    // 在初始化阶段执行“初始参数读取”，仅处理 SetParm，其他命令禁止执行
+    using namespace std::chrono;
+    std::cout << "开始参数同步，请稍候..." << std::endl;
+
+    // 至少收到过一个 SetParm 以后，若超过该静默时间未再收到新的 SetParm，则判定同步完成
+    const auto idle_timeout = std::chrono::milliseconds(1000);
+    auto last_recv = std::chrono::steady_clock::now();
+    bool got_any_setparm = false;
+
+    while (true) {
+        bool received_any = false;
+        HighLevelCommand cmd;
+
+        // 先处理高优先级队列，仅消费 SetParm
+        while (shm().high_prio_cmd_queue.pop(cmd)) {
+            received_any = true;
+            if (cmd.command_type == HighLevelCommandType::SetParm) {
+                handleParameterOrder(cmd);
+                last_recv = std::chrono::steady_clock::now();
+                got_any_setparm = true;
+            } else {
+                // 同步阶段禁止其他操作：忽略非参数指令
+                std::cout << "[参数同步中] 忽略高优先级命令（非参数设置）" << std::endl;
+            }
+        }
+
+        // 再处理普通队列，仅消费 SetParm
+        while (shm().cmd_queue.pop(cmd)) {
+            received_any = true;
+            if (cmd.command_type == HighLevelCommandType::SetParm) {
+                handleParameterOrder(cmd);
+                last_recv = std::chrono::steady_clock::now();
+                got_any_setparm = true;
+            } else {
+                // 同步阶段禁止其他操作：忽略非参数指令
+                std::cout << "[参数同步中] 忽略普通命令（非参数设置）" << std::endl;
+            }
+        }
+
+        auto now = std::chrono::steady_clock::now();
+        // 完成条件：已至少接收过一次 SetParm，且超过静默时间未再收到新的 SetParm
+        if (got_any_setparm &&
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - last_recv) > idle_timeout) {
+            break;
+        }
+
+        // 若本轮没有收到任何命令，稍作等待，以避免忙等
+        if (!received_any) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+
+    std::cout << "参数同步完成" << std::endl;
+#endif 
     std::cout << "机器人初始化完成" << std::endl;
 }
 
@@ -243,8 +298,19 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _star
                                Eigen::AngleAxisd(_pose[4], Eigen::Vector3d::UnitY()) *
                                Eigen::AngleAxisd(_pose[3], Eigen::Vector3d::UnitX());
 
-    // 计算直线距离
-    double distance = (end_p - start_p).norm();
+    // 计算位置距离
+    double position_distance = (end_p - start_p).norm();
+    
+    // 计算姿态距离（四元数角度差）
+    double orientation_angle = start_q.angularDistance(end_q);  // 弧度
+    
+    // 将姿态角度转换为等效的线性距离（转换系数可调整）
+    // 假设1弧度的姿态变化等效于100mm的位置变化
+    const double ORIENTATION_TO_POSITION_RATIO = 100.0;  // mm/rad
+    double orientation_distance = orientation_angle * ORIENTATION_TO_POSITION_RATIO;
+    
+    // 取位置距离和姿态距离的最大值作为插补距离
+    double distance = std::max(position_distance, orientation_distance);
     
     if (distance < 1e-6) {
         std::cout << "目标位置与当前位置过于接近，运动结束" << std::endl;
@@ -275,19 +341,11 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _star
     int cycleCount = 0;
     
     while (!motionCompleted) {
-        // 检查暂停状态
+        // 检查暂停/恢复（非阻塞）
         if (GlobalParams::isPause) {
             m_velocityPlanner.pause();
-            
-            // 等待恢复
-            while (GlobalParams::isPause && !GlobalParams::isStop) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            
-            // 恢复运动
-            if (!GlobalParams::isStop) {
-                m_velocityPlanner.resume();
-            }
+        } else if (GlobalParams::isResume && m_velocityPlanner.isPaused()) {
+            m_velocityPlanner.resume();
         }
         
         // 处理紧急停止
@@ -295,10 +353,17 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _star
             m_velocityPlanner.emergencyStop();
             break;
         }
-
+        
         // 获取当前运动状态
         VelocityPlanner::MotionState state = m_velocityPlanner.getNextState();
         
+        // 这里仍可处理高优先级命令（不阻塞主循环）
+        HighLevelCommand cmd;
+        if (shm().high_prio_cmd_queue.pop(cmd))
+        {
+            handleHighPriorityCommand(cmd);
+        }
+
         // 计算插补比例
         double interp_ratio = state.position / distance;
         interp_ratio = std::max(0.0, std::min(1.0, interp_ratio));
@@ -405,7 +470,7 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _star
             // 更新当前关节角度
             m_curJoints = target_joints;
             
-            // 输出到CSV文件
+            //输出到CSV文件
             // csv_write_counter++;
             // if (csv_write_counter >= CSV_WRITE_INTERVAL) {
             //     std::ofstream csvFile("robot_joints_data.csv", std::ios::app);
@@ -574,19 +639,11 @@ void Robot::moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_
     
     // 插补循环
     while (!motionCompleted) {
-        // 检查暂停状态
+        // 检查暂停/恢复（非阻塞）
         if (GlobalParams::isPause) {
             m_velocityPlanner.pause();
-            
-            // 等待恢复
-            while (GlobalParams::isPause && !GlobalParams::isStop) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            
-            // 恢复运动
-            if (!GlobalParams::isStop) {
-                m_velocityPlanner.resume();
-            }
+        } else if (GlobalParams::isResume && m_velocityPlanner.isPaused()) {
+            m_velocityPlanner.resume();
         }
         
         // 处理紧急停止
@@ -597,6 +654,13 @@ void Robot::moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_
         
         // 获取当前运动状态
         VelocityPlanner::MotionState state = m_velocityPlanner.getNextState();
+        
+        // 这里仍可处理高优先级命令（不阻塞主循环）
+        HighLevelCommand cmd;
+        if (shm().high_prio_cmd_queue.pop(cmd))
+        {
+            handleHighPriorityCommand(cmd);
+        }
         
         // 计算插值比例
         double ratio = state.position / arc_length;
@@ -894,8 +958,12 @@ void Robot::jogL(int mode, int axis, int _direction)
                         }
                         else
                         {
-                            std::cerr << "No valid solution found!" << std::endl;
-                            return;
+                            // 若当前 X 位置无任何有效逆解，继续向负方向搜索，直到越界为止
+                            target_pose.X -= 10.0f;
+                            if (target_pose.X < current_pose.X) {
+                                std::cerr << "No valid solution found within X workspace!" << std::endl;
+                                return;
+                            }
                         }
                     }
                 }
@@ -958,8 +1026,12 @@ void Robot::jogL(int mode, int axis, int _direction)
                         }
                         else
                         {
-                            std::cerr << "No valid solution found!" << std::endl;
-                            return;
+                            // 若当前 X 位置无任何有效逆解，继续向正方向搜索，直到越界为止
+                            target_pose.X += 10.0f;
+                            if (target_pose.X > current_pose.X) {
+                                std::cerr << "No valid solution found within X workspace!" << std::endl;
+                                return;
+                            }
                         }
                     }
                 }
@@ -1025,8 +1097,12 @@ void Robot::jogL(int mode, int axis, int _direction)
                         }
                         else
                         {
-                            std::cerr << "No valid solution found!" << std::endl;
-                            return;
+                            // 若当前 Y 位置无任何有效逆解，继续向负方向搜索，直到越界为止
+                            target_pose.Y -= 10.0f;
+                            if (target_pose.Y < current_pose.Y) {
+                                std::cerr << "No valid solution found within Y workspace!" << std::endl;
+                                return;
+                            }
                         }
                     }
                 }
@@ -1089,8 +1165,12 @@ void Robot::jogL(int mode, int axis, int _direction)
                         }
                         else
                         {
-                            std::cerr << "No valid solution found!" << std::endl;
-                            return;
+                            // 若当前 Y 位置无任何有效逆解，继续向正方向搜索，直到越界为止
+                            target_pose.Y += 10.0f;
+                            if (target_pose.Y > current_pose.Y) {
+                                std::cerr << "No valid solution found within Y workspace!" << std::endl;
+                                return;
+                            }
                         }
                     }
                 }
@@ -1156,8 +1236,12 @@ void Robot::jogL(int mode, int axis, int _direction)
                         }
                         else
                         {
-                            std::cerr << "No valid solution found!" << std::endl;
-                            return;
+                            // 若当前 Z 位置无任何有效逆解，继续向负方向搜索，直到越界为止
+                            target_pose.Z -= 10.0f;
+                            if (target_pose.Z < current_pose.Z) {
+                                std::cerr << "No valid solution found within Z workspace!" << std::endl;
+                                return;
+                            }
                         }
                     }
                 }
@@ -1220,8 +1304,12 @@ void Robot::jogL(int mode, int axis, int _direction)
                         }
                         else
                         {
-                            std::cerr << "No valid solution found!" << std::endl;
-                            return;
+                            // 若当前 Z 位置无任何有效逆解，继续向正方向搜索，直到越界为止
+                            target_pose.Z += 10.0f;
+                            if (target_pose.Z > current_pose.Z) {
+                                std::cerr << "No valid solution found within Z workspace!" << std::endl;
+                                return;
+                            }
                         }
                     }
                 }
@@ -1432,19 +1520,11 @@ void Robot::moveBSpline(float _speed, float _start_speed, float _end_speed)
     JointDataManager* a = JointDataManager::getInstance();
 
     while (!motionCompleted) {
-        // 检查暂停状态
+        // 检查暂停/恢复（非阻塞）
         if (GlobalParams::isPause) {
             m_velocityPlanner.pause();
-            
-            // 等待恢复
-            while (GlobalParams::isPause && !GlobalParams::isStop) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            
-            // 恢复运动
-            if (!GlobalParams::isStop) {
-                m_velocityPlanner.resume();
-            }
+        } else if (GlobalParams::isResume && m_velocityPlanner.isPaused()) {
+            m_velocityPlanner.resume();
         }
         
         // 处理紧急停止
@@ -1452,9 +1532,16 @@ void Robot::moveBSpline(float _speed, float _start_speed, float _end_speed)
             m_velocityPlanner.emergencyStop();
             break;
         }
-
+        
         // 获取当前运动状态
         VelocityPlanner::MotionState state = m_velocityPlanner.getNextState();
+        
+        // 这里仍可处理高优先级命令（不阻塞主循环）
+        HighLevelCommand cmd;
+        if (shm().high_prio_cmd_queue.pop(cmd))
+        {
+            handleHighPriorityCommand(cmd);
+        }
         
         // 计算插补比例
         double interp_ratio = state.position / distance;
@@ -1629,19 +1716,11 @@ void Robot::moveL_Avoid_points(std::array<float, NUM_JOINTS> tar_pose, float _sp
 
         index++;
         
-        // 检查暂停状态
+        // 检查暂停/恢复（非阻塞）
         if (GlobalParams::isPause) {
             m_velocityPlanner.pause();
-            
-            // 等待恢复
-            while (GlobalParams::isPause && !GlobalParams::isStop) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            
-            // 恢复运动
-            if (!GlobalParams::isStop) {
-                m_velocityPlanner.resume();
-            }
+        } else if (GlobalParams::isResume && m_velocityPlanner.isPaused()) {
+            m_velocityPlanner.resume();
         }
         
         // 处理紧急停止
@@ -1649,9 +1728,16 @@ void Robot::moveL_Avoid_points(std::array<float, NUM_JOINTS> tar_pose, float _sp
             m_velocityPlanner.emergencyStop();
             break;
         }
-
+        
         // 获取当前运动状态
         VelocityPlanner::MotionState state = m_velocityPlanner.getNextState();
+        
+        // 这里仍可处理高优先级命令（不阻塞主循环）
+        HighLevelCommand cmd;
+        if (shm().high_prio_cmd_queue.pop(cmd))
+        {
+            handleHighPriorityCommand(cmd);
+        }
         
         // 计算插补比例
         double interp_ratio = state.position / distance;
@@ -1898,24 +1984,11 @@ void Robot::avoid_moveJ(const std::array<float, NUM_JOINTS>& _joint_pos, float _
     int cycleCount = 0;
 
     while (!motionCompleted && !GlobalParams::isStop) {
-        // 检查暂停状态
+        // 检查暂停/恢复（非阻塞）
         if (GlobalParams::isPause) {
             m_velocityPlanner.pause();
-            
-            // 等待恢复
-            while (GlobalParams::isPause && !GlobalParams::isStop) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                HighLevelCommand cmd;
-                if (shm().high_prio_cmd_queue.pop(cmd))
-                {
-                    handleHighPriorityCommand(cmd);
-                }
-            }
-            
-            // 恢复运动
-            if (!GlobalParams::isStop && GlobalParams::isResume) {
-                m_velocityPlanner.resume();
-            }
+        } else if (GlobalParams::isResume && m_velocityPlanner.isPaused()) {
+            m_velocityPlanner.resume();
         }
         
         // 处理紧急停止
@@ -1926,6 +1999,13 @@ void Robot::avoid_moveJ(const std::array<float, NUM_JOINTS>& _joint_pos, float _
         
         // 获取当前运动状态
         VelocityPlanner::MotionState state = m_velocityPlanner.getNextState();
+        
+        // 这里仍可处理高优先级命令（不阻塞主循环）
+        HighLevelCommand cmd;
+        if (shm().high_prio_cmd_queue.pop(cmd))
+        {
+            handleHighPriorityCommand(cmd);
+        }
         
         // 计算插补比例系数
         double lambda = state.position / maxDistance;
@@ -2031,19 +2111,11 @@ void Robot::avoid_moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float
     int cycleCount = 0;
     
     while (!motionCompleted) {
-        // 检查暂停状态
+        // 检查暂停/恢复（非阻塞）
         if (GlobalParams::isPause) {
             m_velocityPlanner.pause();
-            
-            // 等待恢复
-            while (GlobalParams::isPause && !GlobalParams::isStop) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            
-            // 恢复运动
-            if (!GlobalParams::isStop) {
-                m_velocityPlanner.resume();
-            }
+        } else if (GlobalParams::isResume && m_velocityPlanner.isPaused()) {
+            m_velocityPlanner.resume();
         }
         
         // 处理紧急停止
@@ -2051,9 +2123,16 @@ void Robot::avoid_moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float
             m_velocityPlanner.emergencyStop();
             break;
         }
-
+        
         // 获取当前运动状态
         VelocityPlanner::MotionState state = m_velocityPlanner.getNextState();
+        
+        // 这里仍可处理高优先级命令（不阻塞主循环）
+        HighLevelCommand cmd;
+        if (shm().high_prio_cmd_queue.pop(cmd))
+        {
+            handleHighPriorityCommand(cmd);
+        }
         
         // 计算插补比例
         double interp_ratio = state.position / distance;
@@ -2678,6 +2757,8 @@ void Robot::handleHighPriorityCommand(const HighLevelCommand &_cmd)
         while (shm().cmd_queue.pop(dummy)) {
             // 循环弹出直到队列为空
         }
+        // 停止后清零当前自动运动索引
+        shm().cur_cmd_index.store(0);
         break;
     }
     case HighLevelCommandType::Pause:
@@ -2730,6 +2811,8 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
         }
         case HighLevelCommandType::MoveJ:
         {
+            shm().cur_cmd_index.store(cmd.command_index);
+
             std::array<float, NUM_JOINTS> pos;
             std::copy(std::begin(cmd.movej_params.target_joint_pos),
                     std::end(cmd.movej_params.target_joint_pos),
@@ -2743,11 +2826,17 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             moveJ(pos, speed, startspeed, endspeed);
             updateJointStates();
             updatePose();
+
+            // 指令完成后清零
+            shm().cur_cmd_index.store(0);
+
             std::cout << std::endl;
             break;
         }
         case HighLevelCommandType::MoveL:
         {
+            shm().cur_cmd_index.store(cmd.command_index);
+
             std::array<float, 6> pose;
             std::copy(std::begin(cmd.movel_params.target_pose),
                     std::end(cmd.movel_params.target_pose),
@@ -2761,11 +2850,16 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             moveL(pose, speed, startspeed, endspeed);
             updateJointStates();
             updatePose();
+
+            shm().cur_cmd_index.store(0);
+
             std::cout << std::endl;
             break;
         }
         case HighLevelCommandType::MoveC:
         {
+            shm().cur_cmd_index.store(cmd.command_index);
+
             std::array<float, 6> pose_mid;
             std::array<float, 6> pose_end;
             std::copy(std::begin(cmd.movec_params.via_pose),
@@ -2782,6 +2876,9 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             moveC(pose_mid, pose_end, speed, startspeed, endspeed);
             updateJointStates();
             updatePose();
+
+            shm().cur_cmd_index.store(0);
+
             break;
         }
         case HighLevelCommandType::MoveCF:
@@ -2836,6 +2933,8 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
         }
         case HighLevelCommandType::MoveLLBSpline:
         {
+            shm().cur_cmd_index.store(cmd.command_index);
+
             std::array<float, 6> first_pose;
             std::array<float, 6> second_pose;
             std::copy(std::begin(cmd.movell_BSpline_params.first_pose),
@@ -2859,6 +2958,9 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
                       _end_speed.begin());
 
             twoMoveL_BSplineTransition(first_pose,second_pose,_speed,_start_speed,_end_speed);
+
+            shm().cur_cmd_index.store(0);
+
             break;
         }
         default:

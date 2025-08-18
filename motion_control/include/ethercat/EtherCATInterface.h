@@ -58,10 +58,10 @@ private:
     // 需要设置的参数
     // 电机减速比
 //    float radio = 95.87;
-    std::array<float, 6> m_GearRatio = {76, 76, 76, 60, 50, 50};
-    std::array<float, 6> m_Encoderbit = {17, 17, 17, 17, 17,17};
+    // std::array<float, 6> m_GearRatio = {76, 76, 76, 60, 50, 50};
+    // std::array<float, 6> m_Encoderbit = {17, 17, 17, 17, 17,17};
     // const std::array<float, 6> REST_JOINT = {M_PI_2, 0, 0, 0, 0, 0};
-    const std::array<float, 6> REST_JOINT = {0, 0, M_PI_2, 0, M_PI_2, 0};
+    // const std::array<float, 6> REST_JOINT = {0, 0, M_PI_2, 0, M_PI_2, 0};
 
 
 
