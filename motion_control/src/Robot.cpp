@@ -2258,14 +2258,7 @@ bool Robot::isPoseInWorkspace(const std::array<float, 6>& pose)
 
 void Robot::calibrationTCP()
 {
-    std::cout << "开始TCP四点法标定流程..." << std::endl;
-    std::cout << "标定点选取要求：" << std::endl;
-    std::cout << "  点1-4: 用不同姿态让TCP尖端接触同一个固定参考点" << std::endl;
-    std::cout << "  注意: 四个姿态应该尽可能不同，以提高标定精度" << std::endl;
-    std::cout << "请按顺序调用addTCPCalibrationPoint()添加标定点" << std::endl;
-
-    // 清除之前的标定数据
-    clearTCPCalibrationData();
+    m_tcpCalibrator.startCalibration();
 }
 
 bool Robot::addTCPCalibrationPoint()
@@ -2277,362 +2270,54 @@ bool Robot::addTCPCalibrationPoint()
     // 将当前法兰位姿添加到标定点列表
     std::array<float, 6> pose = {current_pose.X, current_pose.Y, current_pose.Z,
                                 current_pose.A, current_pose.B, current_pose.C};
-    m_tcpCalibrationPoses.push_back(pose);
-
-    std::cout << "添加标定点 " << m_tcpCalibrationPoses.size()
-              << ": 位置(" << current_pose.X << ", " << current_pose.Y << ", " << current_pose.Z << ") "
-              << "姿态(" << current_pose.A << ", " << current_pose.B << ", " << current_pose.C << ")" << std::endl;
-
-    // 如果已经有足够的点,提示可以进行标定
-    if (m_tcpCalibrationPoses.size() >= 4) {
-        std::cout << "已收集到 " << m_tcpCalibrationPoses.size() << " 个标定点,可以调用calculateTCP()进行标定" << std::endl;
-        return true;
-    } else {
-        std::cout << "还需要 " << (4 - m_tcpCalibrationPoses.size()) << " 个标定点" << std::endl;
-        return false;
-    }
+    return m_tcpCalibrator.addCalibrationPoint(pose);
 }
 
 bool Robot::calculateTCP()
 {
-    if (m_tcpCalibrationPoses.size() < 4) {
-        std::cerr << "标定点不足,需要4个点,当前只有 " << m_tcpCalibrationPoses.size() << " 个点" << std::endl;
-        return false;
-    }
-
-    // 四点法TCP标定算法
-    // 四个不同姿态下TCP尖端接触同一个固定参考点
-    // 通过求解超定方程组得到TCP在法兰坐标系下的位置偏移
-
-    try {
-        // 构建线性方程组 A * tcp_pos = b
-        // 对于每两个姿态,有约束: flange_pos_i + R_i * tcp_local = flange_pos_j + R_j * tcp_local
-        // 即: (R_i - R_j) * tcp_local = flange_pos_j - flange_pos_i
-        
-        int num_equations = 0;
-        // 计算方程数量: C(4,2) * 3 = 6 * 3 = 18个方程
-        for (int i = 0; i < 4; i++) {
-            for (int j = i + 1; j < 4; j++) {
-                num_equations += 3;
-            }
-        }
-        
-        Eigen::MatrixXf A(num_equations, 3);
-        Eigen::VectorXf b(num_equations);
-        
-        int eq_idx = 0;
-        for (int i = 0; i < 4; i++) {
-            for (int j = i + 1; j < 4; j++) {
-                // 构建旋转矩阵
-                Eigen::Matrix3f R_i = (Eigen::AngleAxisf(m_tcpCalibrationPoses[i][5], Eigen::Vector3f::UnitZ()) *
-                                       Eigen::AngleAxisf(m_tcpCalibrationPoses[i][4], Eigen::Vector3f::UnitY()) *
-                                       Eigen::AngleAxisf(m_tcpCalibrationPoses[i][3], Eigen::Vector3f::UnitX())).toRotationMatrix();
-                
-                Eigen::Matrix3f R_j = (Eigen::AngleAxisf(m_tcpCalibrationPoses[j][5], Eigen::Vector3f::UnitZ()) *
-                                       Eigen::AngleAxisf(m_tcpCalibrationPoses[j][4], Eigen::Vector3f::UnitY()) *
-                                       Eigen::AngleAxisf(m_tcpCalibrationPoses[j][3], Eigen::Vector3f::UnitX())).toRotationMatrix();
-                
-                Eigen::Vector3f flange_pos_i(m_tcpCalibrationPoses[i][0],
-                                             m_tcpCalibrationPoses[i][1],
-                                             m_tcpCalibrationPoses[i][2]);
-                
-                Eigen::Vector3f flange_pos_j(m_tcpCalibrationPoses[j][0],
-                                             m_tcpCalibrationPoses[j][1],
-                                             m_tcpCalibrationPoses[j][2]);
-                
-                // (R_i - R_j) * tcp_local = flange_pos_j - flange_pos_i
-                Eigen::Matrix3f diff_R = R_i - R_j;
-                Eigen::Vector3f diff_pos = flange_pos_j - flange_pos_i;
-                
-                A.block<3,3>(eq_idx, 0) = diff_R;
-                b.segment<3>(eq_idx) = diff_pos;
-                eq_idx += 3;
-            }
-        }
-        
-        // 使用最小二乘法求解TCP在法兰坐标系下的位置
-        Eigen::Vector3f tcp_local = A.colPivHouseholderQr().solve(b);
-        
-        m_tcpOffset[0] = tcp_local[0];
-        m_tcpOffset[1] = tcp_local[1];
-        m_tcpOffset[2] = tcp_local[2];
-        
-        // 四点法只标定位置偏移,姿态偏移设为零
-        m_tcpRotation[0] = 0.0f;
-        m_tcpRotation[1] = 0.0f;
-        m_tcpRotation[2] = 0.0f;
-        
-        // 计算标定精度
-        std::vector<float> errors;
-        
-        // 计算参考点位置（使用第一个姿态）
-        Eigen::Matrix3f R_0 = (Eigen::AngleAxisf(m_tcpCalibrationPoses[0][5], Eigen::Vector3f::UnitZ()) *
-                               Eigen::AngleAxisf(m_tcpCalibrationPoses[0][4], Eigen::Vector3f::UnitY()) *
-                               Eigen::AngleAxisf(m_tcpCalibrationPoses[0][3], Eigen::Vector3f::UnitX())).toRotationMatrix();
-        
-        Eigen::Vector3f flange_pos_0(m_tcpCalibrationPoses[0][0],
-                                     m_tcpCalibrationPoses[0][1],
-                                     m_tcpCalibrationPoses[0][2]);
-        
-        Eigen::Vector3f reference_point = flange_pos_0 + R_0 * tcp_local;
-        
-        for (size_t i = 0; i < 4; i++) {
-            Eigen::Matrix3f R_i = (Eigen::AngleAxisf(m_tcpCalibrationPoses[i][5], Eigen::Vector3f::UnitZ()) *
-                                   Eigen::AngleAxisf(m_tcpCalibrationPoses[i][4], Eigen::Vector3f::UnitY()) *
-                                   Eigen::AngleAxisf(m_tcpCalibrationPoses[i][3], Eigen::Vector3f::UnitX())).toRotationMatrix();
-            
-            Eigen::Vector3f flange_pos_i(m_tcpCalibrationPoses[i][0],
-                                         m_tcpCalibrationPoses[i][1],
-                                         m_tcpCalibrationPoses[i][2]);
-            
-            Eigen::Vector3f tcp_world_i = flange_pos_i + R_i * tcp_local;
-            float error = (tcp_world_i - reference_point).norm();
-            errors.push_back(error);
-        }
-        
-        // 计算标准差
-        float mean_error = 0.0f;
-        for (float error : errors) {
-            mean_error += error;
-        }
-        mean_error /= errors.size();
-        
-        float std_dev = 0.0f;
-        for (float error : errors) {
-            std_dev += std::pow(error - mean_error, 2);
-        }
-        std_dev = std::sqrt(std_dev / errors.size());
-        
-        m_tcpCalibrated = true;
-        
-        std::cout << "TCP四点法标定完成!" << std::endl;
-        std::cout << "TCP位置偏移: (" << m_tcpOffset[0] << ", " << m_tcpOffset[1] << ", " << m_tcpOffset[2] << ") mm" << std::endl;
-        std::cout << "TCP姿态偏移: (" << m_tcpRotation[0] << ", " << m_tcpRotation[1] << ", " << m_tcpRotation[2] << ") rad" << std::endl;
-        std::cout << "参考点位置: (" << reference_point[0] << ", " << reference_point[1] << ", " << reference_point[2] << ") mm" << std::endl;
-        std::cout << "标定精度 (标准差): " << std_dev << " mm" << std::endl;
-        
-        if (std_dev > 1.0f) {
-            std::cout << "警告: 标定精度较低,建议重新标定或检查标定点质量" << std::endl;
-        }
-        
-        return true;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "TCP标定过程中发生错误: " << e.what() << std::endl;
-        return false;
-    }
+    return m_tcpCalibrator.calculateTCP();
 }
 
 void Robot::clearTCPCalibrationData()
 {
-    m_tcpCalibrationPoses.clear();
-    m_tcpOffset = {0.0f, 0.0f, 0.0f};
-    m_tcpRotation = {0.0f, 0.0f, 0.0f};
-    m_tcpCalibrated = false;
-    std::cout << "TCP标定数据已清除" << std::endl;
+    m_tcpCalibrator.clearCalibrationData();
 }
 
 bool Robot::isTCPCalibrationReady()
 {
-    return m_tcpCalibrationPoses.size() >= 4;
+    return m_tcpCalibrator.isCalibrationReady();
 }
 
 std::array<float, 3> Robot::getTCPOffset() const
 {
-    return m_tcpOffset;
+    return m_tcpCalibrator.getTCPOffset();
 }
 
 std::array<float, 3> Robot::getTCPRotation() const
 {
-    return m_tcpRotation;
+    return m_tcpCalibrator.getTCPRotation();
 }
 
 std::array<float, 6> Robot::getTCPPoseInBase() const
 {
-    std::array<float, 6> tcp_pose = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-
-    if (!m_tcpCalibrated) {
-        std::cerr << "警告: TCP未标定,返回法兰位姿" << std::endl;
-        // 如果TCP未标定,返回法兰位姿
-        Kine6d flange_pose;
-        std::array<float, NUM_JOINTS> joints_copy = m_curJoints;
-        classic6dofForKine(joints_copy.data(), &flange_pose);
-        tcp_pose[0] = flange_pose.X;
-        tcp_pose[1] = flange_pose.Y;
-        tcp_pose[2] = flange_pose.Z;
-        tcp_pose[3] = flange_pose.A;
-        tcp_pose[4] = flange_pose.B;
-        tcp_pose[5] = flange_pose.C;
-        return tcp_pose;
-    }
-
-    // 获取当前法兰位姿
-    Kine6d flange_pose;
-    std::array<float, NUM_JOINTS> joints_copy = m_curJoints;
-    classic6dofForKine(joints_copy.data(), &flange_pose);
-
-    // 构建法兰到基坐标系的变换矩阵
-    Eigen::Matrix4f T_base_flange = Eigen::Matrix4f::Identity();
-
-    // 从欧拉角构建旋转矩阵 (ZYX顺序)
-    Eigen::Matrix3f R_base_flange = (Eigen::AngleAxisf(flange_pose.C, Eigen::Vector3f::UnitZ()) *
-                                     Eigen::AngleAxisf(flange_pose.B, Eigen::Vector3f::UnitY()) *
-                                     Eigen::AngleAxisf(flange_pose.A, Eigen::Vector3f::UnitX())).toRotationMatrix();
-
-    T_base_flange.block<3,3>(0,0) = R_base_flange;
-    T_base_flange.block<3,1>(0,3) = Eigen::Vector3f(flange_pose.X, flange_pose.Y, flange_pose.Z);
-
-    // 四点标定法只标定TCP位置，不标定姿态
-    // 因此TCP坐标系与法兰坐标系姿态相同，只有位置偏移
-    Eigen::Vector3f tcp_offset(m_tcpOffset[0], m_tcpOffset[1], m_tcpOffset[2]);
-    
-    // 计算TCP在基坐标系下的位置
-    Eigen::Vector3f tcp_position_base = T_base_flange.block<3,1>(0,3) + R_base_flange * tcp_offset;
-    
-    // TCP位置
-    tcp_pose[0] = tcp_position_base[0];
-    tcp_pose[1] = tcp_position_base[1];
-    tcp_pose[2] = tcp_position_base[2];
-    
-    // TCP姿态与法兰姿态相同（四点标定法不标定姿态）
-    tcp_pose[3] = flange_pose.A;
-    tcp_pose[4] = flange_pose.B;
-    tcp_pose[5] = flange_pose.C;
-
-    return tcp_pose;
+    return m_tcpCalibrator.getTCPPoseInBase(m_curJoints);
 }
 
 bool Robot::isTCPCalibrated() const
 {
-    return m_tcpCalibrated;
+    return m_tcpCalibrator.isCalibrated();
 }
 
 bool Robot::addManualTCPCalibrationPoint(float x, float y, float z, float a, float b, float c)
 {
-    // 手动添加标定点（用于测试）
-    std::array<float, 6> pose = {x, y, z, a, b, c};
-    m_tcpCalibrationPoses.push_back(pose);
-
-    std::cout << "手动添加标定点 " << m_tcpCalibrationPoses.size()
-              << ": 位置(" << x << ", " << y << ", " << z << ") "
-              << "姿态(" << a << ", " << b << ", " << c << ")" << std::endl;
-
-    // 如果已经有足够的点,提示可以进行标定
-    if (m_tcpCalibrationPoses.size() >= 4) {
-        std::cout << "已收集到 " << m_tcpCalibrationPoses.size() << " 个标定点,可以调用calculateTCP()进行标定" << std::endl;
-        return true;
-    } else {
-        std::cout << "还需要 " << (4 - m_tcpCalibrationPoses.size()) << " 个标定点" << std::endl;
-        return false;
-    }
+    return m_tcpCalibrator.addManualCalibrationPoint(x, y, z, a, b, c);
 }
 
 void Robot::testTCPCalibration()
 {
-    int choice;
-    bool running = true;
-    
-    std::cout << "\n=== TCP四点标定测试程序 ===" << std::endl;
-    
-    while (running) {
-        std::cout << "\n请选择操作：" << std::endl;
-        std::cout << "1. 开始TCP标定 (calibrationTCP)" << std::endl;
-        std::cout << "2. 添加标定点 (addTCPCalibrationPoint)" << std::endl;
-        std::cout << "3. 计算工具坐标系 (calculateTCP)" << std::endl;
-        std::cout << "4. 清除标定数据 (clearTCPCalibrationData)" << std::endl;
-        std::cout << "5. 输出TCP位置偏移 (getTCPOffset)" << std::endl;
-        std::cout << "6. 输出TCP在基坐标系位姿 (getTCPPoseInBase)" << std::endl;
-        std::cout << "0. 退出测试" << std::endl;
-        std::cout << "请输入选择 (0-6): ";
-        
-        std::cin >> choice;
-        
-        switch (choice) {
-            case 1: {
-                std::cout << "\n=== 开始TCP标定 ===" << std::endl;
-                calibrationTCP();
-                break;
-            }
-            
-            case 2: {
-                std::cout << "\n=== 添加标定点 ===" << std::endl;
-                std::cout << "当前已有 " << m_tcpCalibrationPoses.size() << " 个标定点" << std::endl;
-                
-                if (m_tcpCalibrationPoses.size() >= 4) {
-                    std::cout << "已有足够的标定点，无需继续添加" << std::endl;
-                    break;
-                }
-                
-                std::cout << "请输入第 " << (m_tcpCalibrationPoses.size() + 1) << " 个标定点的法兰位姿：" << std::endl;
-                
-                float x, y, z, a, b, c;
-                std::cin >> x;
-                std::cin >> y;
-                std::cin >> z;
-                std::cin >> a;
-                std::cin >> b;
-                std::cin >> c;
-                
-                addManualTCPCalibrationPoint(x, y, z, a, b, c);
-                break;
-            }
-            
-            case 3: {
-                std::cout << "\n=== 计算工具坐标系 ===" << std::endl;
-                if (calculateTCP()) {
-                    std::cout << "TCP标定计算成功！" << std::endl;
-                } else {
-                    std::cout << "TCP标定计算失败！" << std::endl;
-                }
-                break;
-            }
-            
-            case 4: {
-                std::cout << "\n=== 清除标定数据 ===" << std::endl;
-                clearTCPCalibrationData();
-                break;
-            }
-            
-            case 5: {
-                std::cout << "\n=== TCP位置偏移 ===" << std::endl;
-                if (m_tcpCalibrated) {
-                    std::array<float, 3> offset = getTCPOffset();
-                    std::cout << "TCP相对于法兰坐标系的位置偏移：" << std::endl;
-                    std::cout << "X: " << offset[0] << " mm" << std::endl;
-                    std::cout << "Y: " << offset[1] << " mm" << std::endl;
-                    std::cout << "Z: " << offset[2] << " mm" << std::endl;
-                } else {
-                    std::cout << "TCP未标定，无法获取偏移量" << std::endl;
-                }
-                break;
-            }
-            
-            case 6: {
-                std::cout << "\n=== TCP在基坐标系位姿 ===" << std::endl;
-                std::array<float, 6> tcp_pose = getTCPPoseInBase();
-                std::cout << "TCP相对于基坐标系的位姿：" << std::endl;
-                std::cout << "位置 X: " << tcp_pose[0] << " mm" << std::endl;
-                std::cout << "位置 Y: " << tcp_pose[1] << " mm" << std::endl;
-                std::cout << "位置 Z: " << tcp_pose[2] << " mm" << std::endl;
-                std::cout << "姿态 A: " << tcp_pose[3] << " rad" << std::endl;
-                std::cout << "姿态 B: " << tcp_pose[4] << " rad" << std::endl;
-                std::cout << "姿态 C: " << tcp_pose[5] << " rad" << std::endl;
-                break;
-            }
-            
-            case 0: {
-                std::cout << "退出TCP标定测试程序" << std::endl;
-                running = false;
-                break;
-            }
-            
-            default: {
-                std::cout << "无效选择，请输入0-6之间的数字" << std::endl;
-                break;
-            }
-        }
-    }
+    m_tcpCalibrator.runTestProgram();
 }
+
 
 void Robot::setSpeed(float _speed)
 { 

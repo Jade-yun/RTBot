@@ -9,6 +9,7 @@
 #include "kinematics/Classic6dofKine.h"
 #include <math.h>
 #include "velocityplanner/velocityplanner.h"  // 添加VelocityPlanner头文件
+#include "calibrate/calibrateTCP.h"  // 添加TCP标定类头文件
 
 #define PI (3.1415926)
 
@@ -28,7 +29,7 @@ public:
     void resume();
     void stop();
 
-    // TCP标定相关方法
+     // TCP标定相关方法 - 通过TCPCalibrator实现
     void calibrationTCP();          // 执行TCP标定流程
     bool addTCPCalibrationPoint();  // 添加标定点
     bool calculateTCP();            // 计算TCP位置
@@ -168,7 +169,8 @@ private:
 
     // 7段S型速度规划器实例
     VelocityPlanner m_velocityPlanner;  // 主速度规划器，用于关节空间运动规划
-
+    // TCP标定器实例
+    TCPCalibrator m_tcpCalibrator;
 };
 
 
