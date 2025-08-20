@@ -471,19 +471,19 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _star
             m_curJoints = target_joints;
             
             //输出到CSV文件
-            // csv_write_counter++;
-            // if (csv_write_counter >= CSV_WRITE_INTERVAL) {
-            //     std::ofstream csvFile("robot_joints_data.csv", std::ios::app);
-            //     if (csvFile.is_open()) {
-            //         csvFile << target_joints[0] << "," << target_joints[1] << "," << target_joints[2] 
-            //                << "," << target_joints[3] << "," << target_joints[4] << "," << target_joints[5] << "\n";
-            //         csvFile.close();
-            //     }
-            //     csv_write_counter = 0; // 重置计数器
-            // }
+            csv_write_counter++;
+            if (csv_write_counter >= CSV_WRITE_INTERVAL) {
+                std::ofstream csvFile("robot_joints_data.csv", std::ios::app);
+                if (csvFile.is_open()) {
+                    csvFile << target_joints[0] << "," << target_joints[1] << "," << target_joints[2] 
+                           << "," << target_joints[3] << "," << target_joints[4] << "," << target_joints[5] << "\n";
+                    csvFile.close();
+                }
+                csv_write_counter = 0; // 重置计数器
+            }
             
             // 发送关节角度到底层控制器
-            moveJoints(target_joints);
+            // moveJoints(target_joints);
         } else {
             std::cout << "逆运动学求解失败，运动停止" << std::endl;
             break;
@@ -2530,11 +2530,11 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             float startspeed = cmd.movel_params.startspeed;
             float endspeed = cmd.movel_params.endspeed;
 
-            updateJointStates();
-            updatePose();
+            // updateJointStates();
+            // updatePose();
             moveL(pose, speed, startspeed, endspeed);
-            updateJointStates();
-            updatePose();
+            // updateJointStates();
+            // updatePose();
 
             shm().cur_cmd_index.store(0);
 
@@ -2603,11 +2603,11 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             int direction = cmd.jogl_params.direction;
 
             std::cout << "JogL - " << (mode == 0 ? "点动" : "寸动") << " 轴" << axis << " 方向: " << direction << std::endl;
-            updateJointStates();
-            updatePose();
+            // updateJointStates();
+            // updatePose();
             jogL(mode, axis, direction);
-            updateJointStates();
-            updatePose();
+            // updateJointStates();
+            // updatePose();
             std::cout << std::endl;
             break;
         }

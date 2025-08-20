@@ -145,12 +145,12 @@ public:
     void emergencyStop();
 
     /**
-     * @brief 暂停规划（保持当前状态）
+     * @brief 暂停规划（平滑减速到0，冻结主规划时间）
      */
     void pause();
 
     /**
-     * @brief 恢复规划
+     * @brief 恢复规划（从0平滑加速到暂停前速度，随后解除冻结）
      */
     void resume();
 
@@ -302,7 +302,19 @@ private:
      * @brief 处理紧急停止
      */
     void handleEmergencyStop();
-    
+
+    // 平滑暂停/恢复相关（新增）
+    void startSmoothPause();
+    void startSmoothResume();
+    // 按最大加速度将当前速度逼近 targetVelocity（冻结主规划时间，积分位移计入偏置）
+    bool updateRampTowards(double targetVelocity);
+
+    // 平滑暂停/恢复状态（新增）
+    bool m_mainPlanFrozen;          // 冻结主规划时间（暂停/恢复过程）
+    bool m_pauseRamping;            // 正在减速到0
+    bool m_resumeRamping;           // 正在从0加速到暂停前速度
+    double m_velocityBeforePause;   // 暂停前速度（恢复目标）
+    double m_positionOffset;        // 暂停/恢复时额外位移累计，恢复主规划时位置对齐
 };
 
 #endif // VELOCITY_PLANNER_H

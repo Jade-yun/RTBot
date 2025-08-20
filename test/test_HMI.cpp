@@ -17,14 +17,14 @@ int main() {
     int index = 0;
 
     // 启动后台线程：持续打印“当前自动运动索引”，每200ms刷新一次（单行刷新）
-    std::thread([](){
-        while (true) {
-            auto cur_idx = shm().cur_cmd_index.load();
-            // std::cout << "\r[当前自动运动索引] " << cur_idx << "    " << std::flush;
-            std::cout << "[当前自动运动索引] " << cur_idx << std::endl;
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        }
-    }).detach();
+    // std::thread([](){
+    //     while (true) {
+    //         auto cur_idx = shm().cur_cmd_index.load();
+    //         // std::cout << "\r[当前自动运动索引] " << cur_idx << "    " << std::flush;
+    //         std::cout << "[当前自动运动索引] " << cur_idx << std::endl;
+    //         std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    //     }
+    // }).detach();
 
     while (true) 
     {

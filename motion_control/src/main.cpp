@@ -141,10 +141,10 @@ int main()
 
 
     // 定义moveL 参数
-    // std::array<float, NUM_JOINTS> pose1 = {280.0f, 50.0f, 540.0f, M_PI, 0, -M_PI};
+    // std::array<float, NUM_JOINTS> pose1 = {360.0f, 0.0f, 620.0f, 0, M_PI_2, 0};
     // float speed1 = 30.0f;
     // float start_speed1 = 0.0f;
-    // float end_speed1 = 30.0f;
+    // float end_speed1 = 0.0f;
 
     // std::cout << "Executing 1 MoveL command..." << std::endl;
     // robot.moveL(pose1, speed1, start_speed1, end_speed1);
@@ -219,7 +219,7 @@ int main()
     // robot.moveC(mid_pose2, end_pose2, speed4, start_speed4, end_speed4);
     // std::cout << "Second MoveC command finished." << std::endl;
     
-    // robot.jogL(0, 1 , 1);
+    // robot.jogL(0, 3, 0);
 
 
 

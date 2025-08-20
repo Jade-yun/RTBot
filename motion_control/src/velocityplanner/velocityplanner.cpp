@@ -8,6 +8,12 @@ VelocityPlanner::VelocityPlanner()
       m_pauseTime(0.0), m_maxReachableVelocity(0.0), 
       m_hasConstVelocityPhase(false), m_hasConstAccelPhase(false), 
       m_hasConstDecelPhase(false) {
+    // 平滑暂停/恢复初始化
+    m_mainPlanFrozen = false;
+    m_pauseRamping = false;
+    m_resumeRamping = false;
+    m_velocityBeforePause = 0.0;
+    m_positionOffset = 0.0;
 }
 
 VelocityPlanner::~VelocityPlanner() {
@@ -45,6 +51,13 @@ void VelocityPlanner::reset() {
     m_paused = false;
     m_emergencyStop = false;
     m_pauseTime = 0.0;
+
+    // 平滑暂停/恢复复位
+    m_mainPlanFrozen = false;
+    m_pauseRamping = false;
+    m_resumeRamping = false;
+    m_velocityBeforePause = 0.0;
+    m_positionOffset = 0.0;
 }
 
 VelocityPlanner::MotionState VelocityPlanner::getNextState() {
@@ -52,26 +65,57 @@ VelocityPlanner::MotionState VelocityPlanner::getNextState() {
         return m_currentState;
     }
     
-    if (m_paused) {
-        return m_currentState;
-    }
-    
+    // 紧急停止优先
     if (m_emergencyStop) {
         // 紧急停止处理
         handleEmergencyStop();
         return m_currentState;
     }
+
+    // 正在平滑减速到0（冻结主规划时间）
+    if (m_pauseRamping) {
+        bool done = updateRampTowards(0.0);
+        if (done) {
+            m_pauseRamping = false;
+            m_paused = true;           // 到0后处于暂停保持
+            m_mainPlanFrozen = true;   // 主规划时间保持冻结
+            m_currentState.acceleration = 0.0;
+            m_currentState.jerk = 0.0;
+        }
+        return m_currentState; // ramp阶段不推进主规划时间
+    }
+
+    // 正在平滑恢复到暂停前速度（冻结主规划时间）
+    if (m_resumeRamping) {
+        bool done = updateRampTowards(m_velocityBeforePause);
+        if (done) {
+            m_resumeRamping = false;
+            m_paused = false;
+            m_mainPlanFrozen = false;  // 结束恢复，解除冻结，继续主规划
+            m_currentState.acceleration = 0.0;
+            m_currentState.jerk = 0.0;
+        }
+        return m_currentState;
+    }
     
-    // 更新时间
+    // 暂停保持：冻结主规划时间，保持当前状态
+    if (m_paused || m_mainPlanFrozen) {
+        return m_currentState;
+    }
+    
+    // 正常主规划推进
     double currentTime = m_currentState.timeElapsed + m_params.cycleTime;
     
     // 确定当前阶段
     auto [phase, phaseTime] = determineCurrentPhase(currentTime);
     
-    // 计算当前阶段的运动状态
+    // 计算当前阶段的运动状态（主规划部分）
     m_currentState = calculatePhaseState(phase, phaseTime);
     // 修复：正确设置更新后的时间
     m_currentState.timeElapsed = currentTime;
+
+    // 叠加暂停/恢复期间的位移偏置，使位置对齐
+    m_currentState.position += m_positionOffset;
     
     // 检查是否完成
     if (m_currentState.timeElapsed >= m_segmentTimes.getTotalTime() || 
@@ -637,8 +681,8 @@ VelocityPlanner::MotionState VelocityPlanner::calculatePhaseState(PlanningPhase 
         default:
             state.jerk = 0.0;
             state.acceleration = 0.0;
-            state.velocity = v0;
-            state.position = 0.0;
+            state.velocity = m_params.endVelocity;
+            state.position = m_params.totalDistance;
             break;
     }
     
@@ -760,18 +804,35 @@ void VelocityPlanner::emergencyStop() {
 }
 
 void VelocityPlanner::pause() {
-    if (!m_paused) {
-        m_paused = true;
-        m_pauseTime = m_currentState.timeElapsed;
+    // 已经在减速/恢复/暂停中，忽略
+    if (m_pauseRamping || m_resumeRamping || m_paused) {
+        return;
     }
+    // 记录暂停前速度并启动平滑减速
+    m_velocityBeforePause = std::max(0.0, m_currentState.velocity);
+    startSmoothPause();
 }
 
 void VelocityPlanner::resume() {
-    m_paused = false;
+    // 若正在减速，直接切换到恢复（从当前速度恢复到暂停前速度）
+    if (m_pauseRamping) {
+        m_pauseRamping = false;
+        startSmoothResume();
+        return;
+    }
+    // 已经在恢复中，忽略
+    if (m_resumeRamping) {
+        return;
+    }
+    // 从暂停保持状态恢复
+    if (m_paused || m_mainPlanFrozen) {
+        startSmoothResume();
+    }
 }
 
 bool VelocityPlanner::isPaused() const {
-    return m_paused;
+    // ramp阶段也视为“暂停态”（对上层而言不可自由运行）
+    return m_paused || m_pauseRamping || m_mainPlanFrozen;
 }
 
 double VelocityPlanner::getRemainingDistance() const {
@@ -805,8 +866,8 @@ bool VelocityPlanner::validateParams(const PlanningParams& params) {
         return false;
     }
     
-    // 新增：targetVelocity 验证
-    if (params.targetVelocity <= 0 || params.targetVelocity > params.maxVelocity) {
+    // 新增：targetVelocity 验证（放宽为仅检查正值，超过最大值将由计算阶段自动钳制）
+    if (params.targetVelocity <= 0) {
         return false;
     }
     
@@ -874,4 +935,66 @@ double VelocityPlanner::calculateMinDistance(const PlanningParams& params) {
             return s1 + s2;
         }
     }
+}
+
+// ========== 新增：平滑暂停/恢复的内部方法 ==========
+void VelocityPlanner::startSmoothPause() {
+    m_mainPlanFrozen = true;  // 冻结主规划时间
+    m_pauseRamping = true;
+    m_resumeRamping = false;
+    m_paused = false;         // ramp完成后再置为 true
+}
+
+void VelocityPlanner::startSmoothResume() {
+    m_mainPlanFrozen = true;  // 恢复坡度期间仍冻结主规划
+    m_resumeRamping = true;
+    m_pauseRamping = false;
+    m_paused = false;
+}
+
+// 按最大加速度限制，将当前速度逐步逼近 targetVelocity
+// 说明：
+// - 不推进主轨迹时间（timeElapsed 不变）
+// - 会对 m_currentState.position 进行积分，并累计到 m_positionOffset
+// - 无加加速度限制（若需加加速度限制，可按 jmax 细化加速度变化）
+bool VelocityPlanner::updateRampTowards(double targetVelocity) {
+    double dt = m_params.cycleTime;
+    double amax = m_params.maxAcceleration;
+    targetVelocity = std::clamp(targetVelocity, 0.0, m_params.maxVelocity);
+
+    double v = std::max(0.0, m_currentState.velocity);
+    double dv = targetVelocity - v;
+
+    // 单周期能改变的最大速度
+    double maxDeltaV = amax * dt;
+
+    // 如果本周期能够到达目标速度，则直接到达并结束
+    if (std::abs(dv) <= maxDeltaV + 1e-12) {
+        double v_new = targetVelocity;
+        double s_inc = (v + v_new) * 0.5 * dt;
+
+        m_currentState.position += s_inc;
+        m_positionOffset += s_inc;
+
+        m_currentState.velocity = v_new;
+        m_currentState.acceleration = 0.0;
+        m_currentState.jerk = 0.0;
+        // timeElapsed 不变（冻结主规划时间）
+        return true;
+    }
+
+    // 否则按最大加速度做一小步
+    double step = (dv > 0 ? maxDeltaV : -maxDeltaV);
+    double v_new = v + step;
+    v_new = std::clamp(v_new, 0.0, m_params.maxVelocity);
+
+    double s_inc = (v + v_new) * 0.5 * dt;
+    m_currentState.position += s_inc;
+    m_positionOffset += s_inc;
+
+    m_currentState.velocity = v_new;
+    m_currentState.acceleration = step / dt;
+    m_currentState.jerk = 0.0;
+    // timeElapsed 不变（冻结主规划时间）
+    return false;
 }
