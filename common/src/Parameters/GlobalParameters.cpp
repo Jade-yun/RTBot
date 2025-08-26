@@ -11,3 +11,4 @@ bool GlobalParams::isPause = false;
 bool GlobalParams::isResume = false;
 bool GlobalParams::isStop = false;
 bool GlobalParams::isMoving = false;
+std::atomic<int> GlobalParams::print = {0};

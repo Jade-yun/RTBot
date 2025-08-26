@@ -48,8 +48,8 @@ public:
     void moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_JOINTS> end_pose, float speed, float start_speed, float end_speed);
     void moveCF(std::array<float, NUM_JOINTS> pose1, std::array<float, NUM_JOINTS> pose2, float speed);
     void moveJoints(const std::array<float, NUM_JOINTS>& _joints);
-    void jogJ(int _mode, int _joint_index, int _direction);
-    void jogL(int _mode, int _axis, int _direction);
+    void jogJ(int _mode, int _joint_index, int _direction, int speed, int angle);
+    void jogL(int _mode, int _axis, int _direction, int speed, int line_distance, int angle_distance);
 
 
     // B样条平滑

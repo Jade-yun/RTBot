@@ -165,9 +165,9 @@ void Robot::moveJ(const std::array<float, NUM_JOINTS> &_joint_pos, float _speed,
     // 设置主规划器参数（基于最长距离关节）
     VelocityPlanner::PlanningParams params;
     params.cycleTime = 0.001;    // 1ms插补周期
-    params.maxVelocity = 20 * M_PI / 180.0;  // 直接使用关节最大速度作为系统限制
-    params.maxAcceleration = 20 * M_PI / 180.0;  // 不使用比例系数
-    params.maxJerk = 60 * M_PI / 180.0;
+    params.maxVelocity = 25 * M_PI / 180.0;  // 直接使用关节最大速度作为系统限制
+    params.maxAcceleration = 50 * M_PI / 180.0;  // 不使用比例系数
+    params.maxJerk = 200 * M_PI / 180.0;
     params.targetVelocity = _speed * M_PI / 180.0;  // 直接使用用户输入的设定速度
     params.startVelocity = _start_speed * M_PI / 180.0;  // 
     params.endVelocity = _end_speed * M_PI / 180.0;    // 
@@ -322,7 +322,7 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _star
     params.cycleTime = 0.001;    // 1ms插补周期
     params.maxVelocity = 100.0;  // 笛卡尔空间最大速度 (mm/s)
     params.maxAcceleration = 200.0;  // 最大加速度 (mm/s²)
-    params.maxJerk = 600.0;  // 最大加加速度 (mm/s³)
+    params.maxJerk = 800.0;  // 最大加加速度 (mm/s³)
     params.targetVelocity = _speed;  // 用户设定速度
     params.startVelocity = _start_speed;  // 起始速度
     params.endVelocity = _end_speed;    // 结束速度
@@ -471,19 +471,19 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _star
             m_curJoints = target_joints;
             
             //输出到CSV文件
-            csv_write_counter++;
-            if (csv_write_counter >= CSV_WRITE_INTERVAL) {
-                std::ofstream csvFile("robot_joints_data.csv", std::ios::app);
-                if (csvFile.is_open()) {
-                    csvFile << target_joints[0] << "," << target_joints[1] << "," << target_joints[2] 
-                           << "," << target_joints[3] << "," << target_joints[4] << "," << target_joints[5] << "\n";
-                    csvFile.close();
-                }
-                csv_write_counter = 0; // 重置计数器
-            }
+            // csv_write_counter++;
+            // if (csv_write_counter >= CSV_WRITE_INTERVAL) {
+            //     std::ofstream csvFile("robot_joints_data.csv", std::ios::app);
+            //     if (csvFile.is_open()) {
+            //         csvFile << target_joints[0] << "," << target_joints[1] << "," << target_joints[2] 
+            //                << "," << target_joints[3] << "," << target_joints[4] << "," << target_joints[5] << "\n";
+            //         csvFile.close();
+            //     }
+            //     csv_write_counter = 0; // 重置计数器
+            // }
             
             // 发送关节角度到底层控制器
-            // moveJoints(target_joints);
+            moveJoints(target_joints);
         } else {
             std::cout << "逆运动学求解失败，运动停止" << std::endl;
             break;
@@ -778,7 +778,7 @@ void Robot::moveCF(std::array<float, NUM_JOINTS> pose1, std::array<float, NUM_JO
 }
 
 /* 关节空间手动模式（连续和寸动）*/
-void Robot::jogJ(int _mode, int _index, int _direction)
+void Robot::jogJ(int _mode, int _index, int _direction, int speed, int angle)
 {
     // 重置状态标志,开始新的运动
     GlobalParams::isStop = false;
@@ -786,9 +786,9 @@ void Robot::jogJ(int _mode, int _index, int _direction)
     GlobalParams::isResume = false;
         
     // 点动速度设置
-    const float jog_speed = 10.0f;  // 点动速度 (度/秒)
+    const float jog_speed = speed / 4.0f;  // 点动速度 (度/秒)
     // 微动角度设置
-    const float micro_move_angle = (M_PI / 180.0f);  // 微动角度 (弧度)
+    const float micro_move_angle = (M_PI / 180.0f) * angle;  // 微动角度 (弧度)
 
     // 获取关节限位
     float joint_limit_max = m_angleLimitMax[_index];  // 弧度
@@ -869,28 +869,24 @@ void Robot::jogJ(int _mode, int _index, int _direction)
 }
 
 /* 笛卡尔空间手动模式（寸动）*/
-void Robot::jogL(int mode, int axis, int _direction)
+void Robot::jogL(int mode, int axis, int _direction, int speed, int line_distance, int angle_distance)
 {
     // 重置状态标志,开始新的运动
     GlobalParams::isStop = false;
     GlobalParams::isPause = false;
     GlobalParams::isResume = false;
-
-    // 更新当前关节状态
-    // updateJointStates();
     
     // 获取当前末端位姿
     Kine6d current_pose;
     classic6dofForKine(m_curJoints.data(), &current_pose);
     
     // 点动参数设置
-    const float linear_jog_distance = 30.0f;   // 线性轴点动距离 (mm)
-    const float angular_jog_distance = 10.0f;  // 角度轴点动距离 (度)
-    const float jog_speed = 30.0f;             // 点动速度
+    const float linear_jog_distance = line_distance;   // 线性轴点动距离 (mm)
+    const float angular_jog_distance = angle_distance;  // 角度轴点动距离 (度)
+    const float jog_speed = speed;             // 点动速度
     
     // 计算目标位姿
     Kine6d target_pose = current_pose;
-    float temp_dist = 0.0f;
     bool _flag = false;
     Kine6dSol _q;
     Kine6d _pose;
@@ -2487,11 +2483,11 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
         case HighLevelCommandType::Homing:
         {
             std::cout << "Homing!\n";
-            updateJointStates();
-            updatePose();
+            // updateJointStates();
+            // updatePose();
             homing();
-            updateJointStates();
-            updatePose();
+            // updateJointStates();
+            // updatePose();
             break;
         }
         case HighLevelCommandType::MoveJ:
@@ -2530,11 +2526,11 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             float startspeed = cmd.movel_params.startspeed;
             float endspeed = cmd.movel_params.endspeed;
 
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             moveL(pose, speed, startspeed, endspeed);
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
 
             shm().cur_cmd_index.store(0);
 
@@ -2585,14 +2581,16 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             int mode = cmd.jogj_params.mode;
             int joint_index = cmd.jogj_params.joint_index;
             int direction = cmd.jogj_params.direction;
+            int speed = cmd.jogj_params.speed;
+            int angle = cmd.jogj_params.angle;
 
             std::cout << "JogJ - " << (mode == 0 ? "点动" : "寸动") << " 关节" << joint_index << " 方向: " << direction << std::endl;
 
-            updateJointStates();
-            updatePose();
-            jogJ(mode, joint_index, direction);
-            updateJointStates();
-            updatePose();
+            // updateJointStates();
+            // updatePose();
+            jogJ(mode, joint_index, direction, speed, angle);
+            // updateJointStates();
+            // updatePose();
             std::cout << std::endl;
             break;
         }
@@ -2601,11 +2599,15 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             int mode = cmd.jogl_params.mode;
             int axis = cmd.jogl_params.axis;
             int direction = cmd.jogl_params.direction;
+            int speed = cmd.jogl_params.speed;
+            int line_distance = cmd.jogl_params.line_distance;
+            int angle_distance = cmd.jogl_params.angle_distance;
+
 
             std::cout << "JogL - " << (mode == 0 ? "点动" : "寸动") << " 轴" << axis << " 方向: " << direction << std::endl;
             // updateJointStates();
             // updatePose();
-            jogL(mode, axis, direction);
+            jogL(mode, axis, direction, speed, line_distance, angle_distance);
             // updateJointStates();
             // updatePose();
             std::cout << std::endl;
@@ -2647,6 +2649,13 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
             shm().cur_cmd_index.store(0);
 
             break;
+        }
+        case HighLevelCommandType::Print:
+        {
+            GlobalParams::print.store(cmd.print_params.flag);
+
+            std::cout << "cmd.print_params.flag = " << cmd.print_params.flag << std::endl;
+
         }
         default:
             break;

@@ -48,14 +48,15 @@ int main() {
         std::cout << "Use #(x,x,x,x,x,x),(x,x,x,x,x,x),speed for MoveC\n";
         std::cout << "Use %(x,x,x,x,x,x,x,x,x)%(x,x,x,x,x,x,x,x,x),speed for MoveLL_BSpline\n";           
         std::cout << "---------------MANUAL---------------\n";
-        std::cout << "Use j<mode><joint_index><direction> for JogJ (mode:0连续,1微动; joint_index:0-5; direction:1正向,0负向)\n";
-        std::cout << "Use l<mode><axis><direction> for JogL (mode:0连续,1微动; axis:1-6; direction:1正向,0负向)\n";
+        std::cout << "Use jx,x,x,x,x for jogJ<mode,joint_index,direction,speed,jog_angle>\n";
+        std::cout << "Use lx,x,x,x,x,x for jogL<mode,index,direction,speed,line_distance,angle_distance>\n";
         std::cout << "---------------COMMON----------------\n";
-        std::cout << "Use p to Pause\n";
+        std::cout << "Use pause to Pause\n";
         std::cout << "Use r to Resume\n";
         std::cout << "Use q to stop\n";
         std::cout << "Use h to Homing\n";
         std::cout << "Use tcp to TCP Calibration\n";
+        std::cout << "Use printon or printoff to toggle printing\n";
         std::cout << "====================================\n\n";
 
         std::string cmd_str;
@@ -169,7 +170,7 @@ int main() {
             cmd.movel_params.startspeed = startspeed;
             cmd.movel_params.endspeed = endspeed;
         }
-        else if (cmd_str[0] == 'p')
+        else if (cmd_str == "pause")
         {
             cmd.command_type = HighLevelCommandType::Pause;
         }
@@ -180,9 +181,16 @@ int main() {
         else if (cmd_str[0] == 'j' && cmd_str.length() >= 4)
         {
             // 解析点动命令，格式：j<mode><joint_index><direction>
-            int mode = cmd_str[1] - '0';         // 模式 0 连续点动, 1 微动
-            int joint_index = cmd_str[2] - '0';  // 关节索引
-            int direction = cmd_str[3] - '0';         // 方向
+            // int mode = cmd_str[1] - '0';         // 模式 0 连续点动, 1 微动
+            // int joint_index = cmd_str[2] - '0';  // 关节索引
+            // int direction = cmd_str[3] - '0';         // 方向
+            int mode;
+            int joint_index;
+            int direction;
+            int speed;
+            int angle;
+            argNum = sscanf(cmd_str.c_str(), "j%d,%d,%d,%d,%d", &mode, &joint_index, &direction, &speed, &angle);
+
             if ((mode == 0 || mode == 1) && joint_index >= 0 && joint_index < NUM_JOINTS &&
                 (direction == 1 || direction == 0)) // 方向 '1' 正向, '0' 负向
             {
@@ -190,21 +198,30 @@ int main() {
                 cmd.jogj_params.mode = mode;
                 cmd.jogj_params.joint_index = joint_index;
                 cmd.jogj_params.direction = direction;
-                
+                cmd.jogj_params.speed = speed;
+                cmd.jogj_params.angle = angle;
+
                 std::cout << "发送关节点动命令: 模式 " << mode << ", 关节" << joint_index << " 方向: " << direction << std::endl;
             }
             else
             {
-                std::cout << "无效的关节点动命令格式！请使用 j<mode><joint_index><1/0> 格式\n";
+                std::cout << "无效的关节点动命令格式！\n";
                 continue;
             }
         }
         else if (cmd_str[0] == 'l' && cmd_str.length() >= 4)
         {
             // 解析笛卡尔点动命令，格式：l<mode><axis><direction>
-            int mode = cmd_str[1] - '0';      // 模式 0 连续点动, 1 微动
-            int axis = cmd_str[2] - '0';      // 轴
-            int direction = cmd_str[3] - '0'; // 方向
+            // int mode = cmd_str[1] - '0';      // 模式 0 连续点动, 1 微动
+            // int axis = cmd_str[2] - '0';      // 轴
+            // int direction = cmd_str[3] - '0'; // 方向
+            int mode;
+            int axis;
+            int direction;
+            int speed;
+            int line_distance;
+            int angle_distance;
+            argNum = sscanf(cmd_str.c_str(), "l%d,%d,%d,%d,%d,%d", &mode, &axis, &direction, &speed, &line_distance, &angle_distance);
 
             if ((mode == 0 || mode == 1) && (axis == 1 || axis == 2 || axis == 3 || axis == 4 || axis == 5 || axis == 6) &&
                 (direction == 1 || direction == 0))
@@ -213,18 +230,33 @@ int main() {
                 cmd.jogl_params.mode = mode;
                 cmd.jogl_params.axis = axis;
                 cmd.jogl_params.direction = direction;
+                cmd.jogl_params.speed = speed;
+                cmd.jogl_params.line_distance = line_distance;
+                cmd.jogl_params.angle_distance = angle_distance;
 
                 std::cout << "发送笛卡尔点动命令: 模式 " << mode << ", 轴" << axis << " 方向: " << direction << std::endl;
             }
             else
             {
-                std::cout << "无效的笛卡尔点动命令格式！请使用 l<0/1><1/2/3/4/5/6><1/0> 格式\n";
+                std::cout << "无效的笛卡尔点动命令格式!\n";
                 continue;
             }
         }
         else if (cmd_str == "tcp")
         {
             cmd.command_type = HighLevelCommandType::TCPCalibration;
+        }
+        else if (cmd_str == "printon")
+        {
+            cmd.command_type = HighLevelCommandType::Print;
+            cmd.print_params.flag = 1;
+            std::cout << "print on \n";
+        }
+        else if (cmd_str == "printoff")
+        {
+            cmd.command_type = HighLevelCommandType::Print;
+            cmd.print_params.flag = 0;
+            std::cout << "print off \n";
         }
         else if (cmd_str[0] == '%')
         {

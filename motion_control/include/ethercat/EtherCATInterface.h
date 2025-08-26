@@ -8,6 +8,7 @@
 #include <string>
 #include <thread>
 #include <math.h>
+#include <fstream>  
 
 #include "ethercat/config_hcfa.h"
 
@@ -62,7 +63,8 @@ private:
     // std::array<float, 6> m_Encoderbit = {17, 17, 17, 17, 17,17};
     // const std::array<float, 6> REST_JOINT = {M_PI_2, 0, 0, 0, 0, 0};
     // const std::array<float, 6> REST_JOINT = {0, 0, M_PI_2, 0, M_PI_2, 0};
-
+\
+    std::ofstream csvFile;
 
 
 };

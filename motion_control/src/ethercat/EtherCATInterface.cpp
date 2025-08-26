@@ -328,6 +328,8 @@ void initDrive(ec_master_t* master, uint16_t slavePos, uint8_t mode)
 
 bool EtherCATInterface::init()
 {  
+    csvFile.open("robot_joint_data_movec.csv", std::ios::app);
+
     master_ = ecrt_request_master(0);
     if (!master_)
     {
@@ -590,6 +592,7 @@ void EtherCATInterface::runTask()
             {
 
                 target_pos_pulse[i] = montor_cmd.joint_pos[i];
+
             } 
         }
         
@@ -597,6 +600,27 @@ void EtherCATInterface::runTask()
         {
             // auto value = (EC_READ_S32(domain_pd_ + offset.Position_Actual_Value[i]));
             EC_WRITE_U32(domain_pd_ + offset.Target_Position[i], target_pos_pulse[i]);
+        }
+
+        if (GlobalParams::print.load(std::memory_order_acquire))
+        {
+
+            // if (print_cnt % 1 == 0)
+            // {
+                if (csvFile.is_open()) {
+                        csvFile << target_pos_pulse[0] << "," << target_pos_pulse[1] << "," << target_pos_pulse[2] 
+                            << "," << target_pos_pulse[3] << "," << target_pos_pulse[4] << "," << target_pos_pulse[5] << ",";
+
+                        csvFile << actual_pos_pulse[0] << "," << actual_pos_pulse[1] << "," << actual_pos_pulse[2] 
+                        << "," << actual_pos_pulse[3] << "," << actual_pos_pulse[4] << "," << actual_pos_pulse[5] << "\n";
+
+                        // csvFile << target_pos_pulse[0] << "," << target_pos_pulse[1] << "," << target_pos_pulse[2] 
+                        //     << "," << target_pos_pulse[3] << "," << target_pos_pulse[4] << "," << target_pos_pulse[5] << ",";
+
+                        // csvFile << actual_vel[0] << "," << actual_vel[1] << "," << actual_vel[2] 
+                        // << "," << actual_vel[3] << "," << actual_vel[4] << "," << actual_vel[5] << "\n";
+                    }
+            // }
         }
     }
     
@@ -692,10 +716,10 @@ void EtherCATInterface::runTask()
         // 脉冲 -> 角度(弧度)
         double current_pos; 
         // current_pos = actual_pos_pulse[i] / pow(2, m_Encoderbit[i]) / m_GearRatio[i] * M_PI * 2.0f;
-
-        current_pos = (actual_pos_pulse[i] / pow(2, parm.m_Encoderbit[i]) / parm.m_GearRatio[i] * M_PI * 2.0f) + parm.REST_JOINT[i];
-        // current_pos = actual_pos_pulse[i] / 250000.0 * (M_PI / 13.1072);
+        // double convert = (pow(2, parm.m_Encoderbit[i]) * parm.m_GearRatio[i]) / (2.0 * M_PI);
+        current_pos = (actual_pos_pulse[i] / pow(2, parm.m_Encoderbit[i]) / parm.m_GearRatio[i] * M_PI * 2.0f) + parm.REST_JOINT[i];        // current_pos = actual_pos_pulse[i] / 250000.0 * (M_PI / 13.1072);
         cur_state.joint_state[i].position = current_pos;
+
         cur_state.joint_state[i].velocity = actual_vel[i];
         // cur_state.joint_state[i].torque = actual_torque[i]; 
 

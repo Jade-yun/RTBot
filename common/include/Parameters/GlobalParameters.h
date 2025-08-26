@@ -25,6 +25,8 @@ public:
     static bool isResume;
     static bool isJogStop;  // 点动停止标志
 
+    static std::atomic<int> print;
+
 };
 
 #endif

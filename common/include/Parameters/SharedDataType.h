@@ -35,6 +35,8 @@ enum class HighLevelCommandType : uint8_t {
     JogL,     // 笛卡尔点动（Jog Linear）
     TCPCalibration, // TCP标定指令
     MoveLLBSpline, // 笛卡尔空间两段移动中间加B样条平滑
+
+    Print
 };
 
 // 机械结构参数
@@ -148,6 +150,8 @@ struct HighLevelCommand {
             int mode;          // 模式 '0' 连续点动, '1' 微动
             int joint_index;  // 关节索引 (0-5)
             int direction;       // 方向 ('1'正向 或 '0'负向)
+            int speed;           // 点动速度 (度/秒)
+            int angle;      //步进角度
         } jogj_params;
 
         // 笛卡尔点动
@@ -155,6 +159,9 @@ struct HighLevelCommand {
             int mode;          // 模式 '0' 连续点动, '1' 微动
             int axis;
             int direction;
+            int speed;  //点动速度
+            int line_distance;  //XYZ步进距离
+            int angle_distance;  //ABC步进角度
         } jogl_params;
 
         struct {
@@ -197,6 +204,10 @@ struct HighLevelCommand {
         struct {
             uint32_t wait_time_ms;
         } wait_params;
+
+        struct {
+            uint32_t flag;
+        } print_params;
     };
 };
 
