@@ -165,6 +165,10 @@ struct HighLevelCommand {
         } jogl_params;
 
         struct {
+            int action;
+        } tcp4cartesian_params;
+
+        struct {
             float target_joint_pos[NUM_JOINTS];
             float gain;
         } servoj_params;

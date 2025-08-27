@@ -55,7 +55,7 @@ int main() {
         std::cout << "Use r to Resume\n";
         std::cout << "Use q to stop\n";
         std::cout << "Use h to Homing\n";
-        std::cout << "Use tcp to TCP Calibration\n";
+        std::cout << "Use tx to TCP Calibration<t0:start,1:add,2:calculate,3:clear,4:offset,5:pose>\n";
         std::cout << "Use printon or printoff to toggle printing\n";
         std::cout << "====================================\n\n";
 
@@ -178,7 +178,7 @@ int main() {
         {
             cmd.command_type = HighLevelCommandType::Resume;
         }
-        else if (cmd_str[0] == 'j' && cmd_str.length() >= 4)
+        else if (cmd_str[0] == 'j')
         {
             // 解析点动命令，格式：j<mode><joint_index><direction>
             // int mode = cmd_str[1] - '0';         // 模式 0 连续点动, 1 微动
@@ -209,7 +209,7 @@ int main() {
                 continue;
             }
         }
-        else if (cmd_str[0] == 'l' && cmd_str.length() >= 4)
+        else if (cmd_str[0] == 'l')
         {
             // 解析笛卡尔点动命令，格式：l<mode><axis><direction>
             // int mode = cmd_str[1] - '0';      // 模式 0 连续点动, 1 微动
@@ -242,9 +242,12 @@ int main() {
                 continue;
             }
         }
-        else if (cmd_str == "tcp")
+        else if (cmd_str[0] == 't')
         {
+            int action;
+            argNum = sscanf(cmd_str.c_str(), "t%d", &action);
             cmd.command_type = HighLevelCommandType::TCPCalibration;
+            cmd.tcp4cartesian_params.action = action;
         }
         else if (cmd_str == "printon")
         {
@@ -358,19 +361,6 @@ int main() {
             {
                 std::cout << "发送普通命令...\n";
             }
-        }
-
-        if (cmdSent)
-        {
-            RobotState state;
-            shm().state_buffer.read(state);
-
-            std::cout << "joints pos: ";
-            for (int i = 0; i < NUM_JOINTS; i++)
-            {
-                std::cout << " " << state.joint_state[i].position;
-            }
-            std::cout << std::endl;
         }
 
     }

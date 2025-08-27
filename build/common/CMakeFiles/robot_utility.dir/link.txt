@@ -1,0 +1,2 @@
+/opt/EmbedSky/gcc-linaro-7.4.1-2019.02-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-ar qc ../lib/librobot_utility.a CMakeFiles/robot_utility.dir/src/Parameters/GlobalParameters.cpp.o CMakeFiles/robot_utility.dir/src/Utilities/PeriodicTask.cpp.o
+/opt/EmbedSky/gcc-linaro-7.4.1-2019.02-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-ranlib ../lib/librobot_utility.a

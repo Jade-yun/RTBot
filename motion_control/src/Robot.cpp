@@ -493,7 +493,7 @@ void Robot::moveL(std::array<float, NUM_JOINTS> _pose, float _speed, float _star
         motionCompleted = m_velocityPlanner.isCompleted();
         
         cycleCount++;
-        if (cycleCount % 100 == 0) {
+        if (cycleCount % 10 == 0) {
             std::cout << "周期: " << cycleCount
                       << ", 位置: [" << current_p.x() << ", " << current_p.y() << ", " << current_p.z() << "]"
                       << ", 速度: " << state.velocity
@@ -593,7 +593,7 @@ void Robot::moveC(std::array<float, NUM_JOINTS> mid_pose, std::array<float, NUM_
     params.cycleTime = 0.001;  // 1ms
     params.maxVelocity = 100.0;  // mm/s
     params.maxAcceleration = 200.0;  // mm/s²
-    params.maxJerk = 600.0;  // mm/s³
+    params.maxJerk = 800.0;  // mm/s³
     params.targetVelocity = speed;
     params.startVelocity = start_speed;
     params.endVelocity = end_speed;
@@ -2252,69 +2252,6 @@ bool Robot::isPoseInWorkspace(const std::array<float, 6>& pose)
     
 }
 
-void Robot::calibrationTCP()
-{
-    m_tcpCalibrator.startCalibration();
-}
-
-bool Robot::addTCPCalibrationPoint()
-{
-    // 获取当前机器人末端法兰的位姿（通过正运动学）
-    Kine6d current_pose;
-    classic6dofForKine(m_curJoints.data(), &current_pose);
-
-    // 将当前法兰位姿添加到标定点列表
-    std::array<float, 6> pose = {current_pose.X, current_pose.Y, current_pose.Z,
-                                current_pose.A, current_pose.B, current_pose.C};
-    return m_tcpCalibrator.addCalibrationPoint(pose);
-}
-
-bool Robot::calculateTCP()
-{
-    return m_tcpCalibrator.calculateTCP();
-}
-
-void Robot::clearTCPCalibrationData()
-{
-    m_tcpCalibrator.clearCalibrationData();
-}
-
-bool Robot::isTCPCalibrationReady()
-{
-    return m_tcpCalibrator.isCalibrationReady();
-}
-
-std::array<float, 3> Robot::getTCPOffset() const
-{
-    return m_tcpCalibrator.getTCPOffset();
-}
-
-std::array<float, 3> Robot::getTCPRotation() const
-{
-    return m_tcpCalibrator.getTCPRotation();
-}
-
-std::array<float, 6> Robot::getTCPPoseInBase() const
-{
-    return m_tcpCalibrator.getTCPPoseInBase(m_curJoints);
-}
-
-bool Robot::isTCPCalibrated() const
-{
-    return m_tcpCalibrator.isCalibrated();
-}
-
-bool Robot::addManualTCPCalibrationPoint(float x, float y, float z, float a, float b, float c)
-{
-    return m_tcpCalibrator.addManualCalibrationPoint(x, y, z, a, b, c);
-}
-
-void Robot::testTCPCalibration()
-{
-    m_tcpCalibrator.runTestProgram();
-}
-
-
 void Robot::setSpeed(float _speed)
 { 
     //设置全局速度,关节空间和笛卡尔空间速度统一
@@ -2483,11 +2420,11 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
         case HighLevelCommandType::Homing:
         {
             std::cout << "Homing!\n";
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             homing();
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             break;
         }
         case HighLevelCommandType::MoveJ:
@@ -2586,11 +2523,11 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
 
             std::cout << "JogJ - " << (mode == 0 ? "点动" : "寸动") << " 关节" << joint_index << " 方向: " << direction << std::endl;
 
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             jogJ(mode, joint_index, direction, speed, angle);
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             std::cout << std::endl;
             break;
         }
@@ -2605,17 +2542,73 @@ void Robot::handleNormalCommand(const HighLevelCommand &cmd)
 
 
             std::cout << "JogL - " << (mode == 0 ? "点动" : "寸动") << " 轴" << axis << " 方向: " << direction << std::endl;
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             jogL(mode, axis, direction, speed, line_distance, angle_distance);
-            // updateJointStates();
-            // updatePose();
+            updateJointStates();
+            updatePose();
             std::cout << std::endl;
             break;
         }
         case HighLevelCommandType::TCPCalibration:
         {
-            testTCPCalibration();
+            int action = cmd.tcp4cartesian_params.action;
+            switch (action) {
+                case 0: // 开始标定
+                    m_tcpCalibrator.startCalibration();
+                    break;
+                case 1: // 添加标定点
+                {
+                    // 获取当前机器人末端法兰的位姿（通过正运动学）
+                    Kine6d current_pose;
+                    classic6dofForKine(m_curJoints.data(), &current_pose);
+
+                    // 将当前法兰位姿添加到标定点列表
+                    std::array<float, 6> pose = {current_pose.X, current_pose.Y, current_pose.Z,
+                                                current_pose.A, current_pose.B, current_pose.C};
+                    m_tcpCalibrator.addCalibrationPoint(pose);
+                    break;
+                }
+                case 2: //计算标定结果
+                {
+                    m_tcpCalibrator.calculateTCP();
+                    break;
+                }
+                case 3: //清除标定数据
+                {
+                    m_tcpCalibrator.clearCalibrationData();
+                    break;
+                }
+                case 4: // 获取标定位置偏移
+                {
+                    if (m_tcpCalibrator.isCalibrated())
+                    {
+                        std::array<float, 3> offset = m_tcpCalibrator.getTCPOffset();
+                        std::cout << "TCP相对于法兰坐标系的位置偏移:" << std::endl;
+                        std::cout << "X: " << std::fixed << std::setprecision(3) << offset[0] << " mm" << std::endl;
+                        std::cout << "Y: " << std::fixed << std::setprecision(3) << offset[1] << " mm" << std::endl;
+                        std::cout << "Z: " << std::fixed << std::setprecision(3) << offset[2] << " mm" << std::endl;
+                    }
+                    else
+                    {
+                        std::cout << "TCP未标定,无法获取位置偏移" << std::endl;
+                    }
+                    break;
+                }
+                case 5: // 获取基坐标系下的位姿
+                {
+                    std::array<float, 6> tcp_pose = m_tcpCalibrator.getTCPPoseInBase(m_curJoints);
+                    std::cout << "TCP在基坐标系下的位姿:" << std::endl;
+                    for(int i = 0; i < 6; i++)
+                    {
+                        std::cout << std::fixed << std::setprecision(3) << tcp_pose[i] << " ";
+                    }
+                    std::cout << std::endl;
+                    break;
+                }
+                default:
+                    break;
+            }
             break;
         }
         case HighLevelCommandType::MoveLLBSpline:

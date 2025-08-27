@@ -29,18 +29,6 @@ public:
     void resume();
     void stop();
 
-     // TCP标定相关方法 - 通过TCPCalibrator实现
-    void calibrationTCP();          // 执行TCP标定流程
-    bool addTCPCalibrationPoint();  // 添加标定点
-    bool calculateTCP();            // 计算TCP位置
-    void clearTCPCalibrationData(); // 清除标定数据
-    bool isTCPCalibrationReady();   // 检查是否可以进行标定
-    std::array<float, 3> getTCPOffset() const; // 获取TCP位置偏移量
-    std::array<float, 3> getTCPRotation() const; // 获取TCP姿态偏移量
-    std::array<float, 6> getTCPPoseInBase() const; // 获取TCP相对于基坐标系的位姿
-    bool isTCPCalibrated() const;   // 检查TCP是否已标定
-    void testTCPCalibration();
-    bool addManualTCPCalibrationPoint(float x, float y, float z, float a, float b, float c);
 
     //
     void moveJ(const std::array<float, NUM_JOINTS>& _joint_pos, float _speed, float _start_speed, float _end_speed);

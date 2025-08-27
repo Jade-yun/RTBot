@@ -114,17 +114,20 @@ VelocityPlanner::MotionState VelocityPlanner::getNextState() {
     // 修复：正确设置更新后的时间
     m_currentState.timeElapsed = currentTime;
 
+    // 保存主规划的理论位置（用于完成判断）
+    double theoreticalPosition = m_currentState.position;
+
     // 叠加暂停/恢复期间的位移偏置，使位置对齐
     m_currentState.position += m_positionOffset;
     
-    // 检查是否完成
+    // 检查是否完成 - 使用理论位置而不是实际位置
     if (m_currentState.timeElapsed >= m_segmentTimes.getTotalTime() || 
-        m_currentState.position >= m_params.totalDistance) {
+        theoreticalPosition >= m_params.totalDistance) {
         m_currentState.isCompleted = true;
         m_currentState.velocity = m_params.endVelocity;
         m_currentState.acceleration = 0.0;
         m_currentState.jerk = 0.0;
-        m_currentState.position = m_params.totalDistance;
+        m_currentState.position = m_params.totalDistance + m_positionOffset; // 保持位置连续性
     }
     
     return m_currentState;
@@ -164,32 +167,26 @@ bool VelocityPlanner::calculateSegmentTimes() {
     
     // 确定实际的目标速度：取设定速度和系统最大速度的较小值
     double vmax_actual = std::min(vtarget, vmax_system);
-    
-    // 计算理论上能达到的最大速度（基于距离约束）
-    double vmax_theoretical = calculateTheoreticalMaxVelocity(v0, v1, s, amax, jmax);
-    
-    // 检查理论最大速度是否有效
-    if (vmax_theoretical < 0) {
-        return false; // 无法找到有效解
-    }
-    
-    // 最终的峰值速度：取实际目标速度和理论最大速度的较小值
-    m_maxReachableVelocity = std::min(vmax_actual, vmax_theoretical);
-    
-    // 确保峰值速度不小于起始和结束速度的最大值
-    double min_required_velocity = std::max(v0, v1);
-    if (m_maxReachableVelocity < min_required_velocity) {
-        m_maxReachableVelocity = min_required_velocity;
-    }
-    
-    // 判断是否需要恒速阶段
-    m_hasConstVelocityPhase = (m_maxReachableVelocity >= vmax_actual && 
-                               vmax_theoretical >= vmax_actual);
-    
-    // 如果有恒速阶段，峰值速度就是实际目标速度
-    if (m_hasConstVelocityPhase) {
+
+    // 检查在给定距离内，以目标速度运动是否可行
+    double s_for_vmax_actual = calculateTotalDistanceForPeakVelocity(v0, v1, vmax_actual, amax, jmax);
+
+    if (s_for_vmax_actual <= s) {
+        // 目标速度可以达到，轨迹将包含匀速阶段
         m_maxReachableVelocity = vmax_actual;
+        m_hasConstVelocityPhase = true;
+    } else {
+        // 目标速度无法达到，是距离受限的短行程
+        // 计算此距离下能达到的最大速度
+        m_maxReachableVelocity = calculateTheoreticalMaxVelocity(v0, v1, s, amax, jmax);
+        if (m_maxReachableVelocity < 0) {
+            return false; // 无法找到有效解
+        }
+        m_hasConstVelocityPhase = false;
     }
+
+    // 确保最终的峰值速度不小于起始和结束速度
+    m_maxReachableVelocity = std::max(m_maxReachableVelocity, std::max(v0, v1));
     
     // 计算加速阶段时间参数
     double dv_accel = m_maxReachableVelocity - v0;
@@ -246,13 +243,7 @@ bool VelocityPlanner::calculateSegmentTimes() {
     // 计算恒速阶段时间
     if (m_hasConstVelocityPhase) {
         double s_const = s - s_accel - s_decel;
-        if (s_const >= -1e-6) { // 允许小的数值误差
-            m_segmentTimes.t4 = std::max(0.0, s_const / m_maxReachableVelocity);
-        } else {
-            // 距离不够，重新计算
-            m_hasConstVelocityPhase = false;
-            return recalculateWithOptimalVelocity();
-        }
+        m_segmentTimes.t4 = std::max(0.0, s_const / m_maxReachableVelocity);
     } else {
         m_segmentTimes.t4 = 0.0;
     }
@@ -407,7 +398,6 @@ double VelocityPlanner::calculateAccelDistance() {
 
 double VelocityPlanner::calculateDecelDistance() {
     double v_end = m_maxReachableVelocity;  // 减速开始速度
-    double v_target = m_params.endVelocity; // 目标结束速度
     double t5 = m_segmentTimes.t5;
     double t6 = m_segmentTimes.t6;
     double t7 = m_segmentTimes.t7;
@@ -417,27 +407,18 @@ double VelocityPlanner::calculateDecelDistance() {
         return 0.0;
     }
     
+    // 第5段：减速度增加阶段
     double s5 = v_end*t5 - jmax*t5*t5*t5/6.0;
     double v5 = v_end - jmax*t5*t5/2.0;
     double a5 = -jmax*t5;
     
+    // 第6段：恒定减速度阶段
     double s6 = v5*t6 + a5*t6*t6/2.0;
     double v6 = v5 + a5*t6;
     
-    // 修复：确保第7段结束时速度为 v_target 而不是 0
-    double s7;
-    if (t7 > 0) {
-        // 验证当前公式是否能达到目标结束速度
-        double v7_calculated = v6 + a5*t7 + jmax*t7*t7/2.0;
-        if (std::abs(v7_calculated - v_target) > 1e-6) {
-            // 如果不匹配，使用平均速度公式确保正确的距离
-            s7 = (v6 + v_target) * t7 / 2.0;
-        } else {
-            s7 = v6*t7 + a5*t7*t7/2.0 + jmax*t7*t7*t7/6.0;
-        }
-    } else {
-        s7 = 0.0;
-    }
+    // 第7段：减速度减少阶段（精确公式）
+    // 此处使用精确的运动学公式，而不是之前有问题的近似“修复”
+    double s7 = v6*t7 + a5*t7*t7/2.0 + jmax*t7*t7*t7/6.0;
     
     return s5 + s6 + s7;
 }
@@ -525,35 +506,58 @@ double VelocityPlanner::calculateTotalDistanceForPeakVelocity(double v0, double 
     double dv_accel = vpeak - v0;
     double dv_decel = vpeak - v1;
     
-    double s_accel = 0.0;
-    double s_decel = 0.0;
-    
-    // 计算加速距离
+    // 保存现场，防止污染主规划状态
+    SevenSegmentTimes original_times = m_segmentTimes;
+    double original_v_reachable = m_maxReachableVelocity;
+    double original_v_start = m_params.startVelocity;
+    double original_v_end = m_params.endVelocity;
+
+    // 临时设置参数以进行计算
+    m_maxReachableVelocity = vpeak;
+    m_params.startVelocity = v0;
+    m_params.endVelocity = v1;
+
+    // 计算加速阶段时间
     if (dv_accel > 1e-9) {
-        if (dv_accel <= amax*amax/jmax) {
-            double t = std::sqrt(dv_accel/jmax);
-            s_accel = v0*2*t + jmax*t*t*t/3.0;
-        } else {
-            double t1 = amax/jmax;
-            double t2 = dv_accel/amax - amax/jmax;
-            s_accel = v0*(2*t1 + t2) + amax*t1*t1 + amax*t1*t2;
+        if (dv_accel <= amax*amax/jmax) { // 三角形
+            m_segmentTimes.t1 = std::sqrt(dv_accel/jmax);
+            m_segmentTimes.t2 = 0.0;
+            m_segmentTimes.t3 = m_segmentTimes.t1;
+        } else { // 梯形
+            m_segmentTimes.t1 = amax/jmax;
+            m_segmentTimes.t2 = dv_accel/amax - amax/jmax;
+            m_segmentTimes.t3 = amax/jmax;
         }
+    } else {
+        m_segmentTimes.t1 = 0.0; m_segmentTimes.t2 = 0.0; m_segmentTimes.t3 = 0.0;
     }
-    
-    // 计算减速距离
+
+    // 计算减速阶段时间
     if (dv_decel > 1e-9) {
-        if (dv_decel <= amax*amax/jmax) {
-            double t = std::sqrt(dv_decel/jmax);
-            // 修复：从vpeak减速到v1的距离公式
-            s_decel = vpeak*2*t - jmax*t*t*t/3.0;
-        } else {
-            double t1 = amax/jmax;
-            double t2 = dv_decel/amax - amax/jmax;
-            // 修复：从vpeak减速到v1的距离公式
-            s_decel = vpeak*(2*t1 + t2) - (amax*t1*t1 + amax*t1*t2);
+        if (dv_decel <= amax*amax/jmax) { // 三角形
+            m_segmentTimes.t5 = std::sqrt(dv_decel/jmax);
+            m_segmentTimes.t6 = 0.0;
+            m_segmentTimes.t7 = m_segmentTimes.t5;
+        } else { // 梯形
+            m_segmentTimes.t5 = amax/jmax;
+            m_segmentTimes.t6 = dv_decel/amax - amax/jmax;
+            m_segmentTimes.t7 = amax/jmax;
         }
+    } else {
+        m_segmentTimes.t5 = 0.0; m_segmentTimes.t6 = 0.0; m_segmentTimes.t7 = 0.0;
     }
     
+    m_segmentTimes.t4 = 0.0; // 此计算不考虑匀速阶段
+
+    double s_accel = calculateAccelDistance();
+    double s_decel = calculateDecelDistance();
+
+    // 恢复现场
+    m_segmentTimes = original_times;
+    m_maxReachableVelocity = original_v_reachable;
+    m_params.startVelocity = original_v_start;
+    m_params.endVelocity = original_v_end;
+
     return s_accel + s_decel;
 }
 
@@ -572,6 +576,9 @@ VelocityPlanner::MotionState VelocityPlanner::calculatePhaseState(PlanningPhase 
     double t4 = m_segmentTimes.t4;
     double t5 = m_segmentTimes.t5;
     double t6 = m_segmentTimes.t6;
+    // 使用实际峰值加速度（若为三角形阶段，没有恒加速/恒减速，则峰值加速度小于等于 amax）
+    double a_peak_accel = m_hasConstAccelPhase ? amax : (jmax * t1); // 加速段峰值加速度
+    double a_peak_decel = m_hasConstDecelPhase ? amax : (jmax * t5); // 减速段峰值加速度（取正值，方向在公式里体现）
     
     switch (phase) {
         case PlanningPhase::ACCEL_JERK: {
@@ -585,30 +592,30 @@ VelocityPlanner::MotionState VelocityPlanner::calculatePhaseState(PlanningPhase 
         }
         
         case PlanningPhase::ACCEL_CONST: {
-            // 第2段：恒定加速度阶段
+            // 第2段：恒定加速度阶段（如果是三角形，加速度峰值为 a_peak_accel，且 t2 = 0，不会进入此分支）
             double t = phaseTime;
             double v1 = v0 + jmax * t1 * t1 / 2.0;
             double s1 = v0 * t1 + jmax * t1 * t1 * t1 / 6.0;
             
             state.jerk = 0.0;
-            state.acceleration = amax;
-            state.velocity = v1 + amax * t;
-            state.position = s1 + v1 * t + amax * t * t / 2.0;
+            state.acceleration = a_peak_accel;
+            state.velocity = v1 + a_peak_accel * t;
+            state.position = s1 + v1 * t + a_peak_accel * t * t / 2.0;
             break;
         }
         
         case PlanningPhase::ACCEL_JERK_DEC: {
-            // 第3段：加速度减少阶段
+            // 第3段：加速度减少阶段（若为三角加速，此阶段从 a_peak_accel 线性降到 0）
             double t = phaseTime;
             double v1 = v0 + jmax * t1 * t1 / 2.0;
             double s1 = v0 * t1 + jmax * t1 * t1 * t1 / 6.0;
-            double v2 = v1 + amax * t2;
-            double s2 = s1 + v1 * t2 + amax * t2 * t2 / 2.0;
+            double v2 = v1 + a_peak_accel * t2;
+            double s2 = s1 + v1 * t2 + a_peak_accel * t2 * t2 / 2.0;
             
             state.jerk = -jmax;
-            state.acceleration = amax - jmax * t;
-            state.velocity = v2 + amax * t - jmax * t * t / 2.0;
-            state.position = s2 + v2 * t + amax * t * t / 2.0 - jmax * t * t * t / 6.0;
+            state.acceleration = a_peak_accel - jmax * t;
+            state.velocity = v2 + a_peak_accel * t - jmax * t * t / 2.0;
+            state.position = s2 + v2 * t + a_peak_accel * t * t / 2.0 - jmax * t * t * t / 6.0;
             break;
         }
         
@@ -625,7 +632,7 @@ VelocityPlanner::MotionState VelocityPlanner::calculatePhaseState(PlanningPhase 
         }
         
         case PlanningPhase::DECEL_JERK: {
-            // 第5段：减速度增加阶段
+            // 第5段：减速度增加阶段（加速度从 0 线性到 -a_peak_decel）
             double t = phaseTime;
             double s_prev = calculateAccelDistance() + m_maxReachableVelocity * t4;
             
@@ -637,44 +644,43 @@ VelocityPlanner::MotionState VelocityPlanner::calculatePhaseState(PlanningPhase 
         }
         
         case PlanningPhase::DECEL_CONST: {
-            // 第6段：恒定减速度阶段
+            // 第6段：恒定减速度阶段（若为三角减速，t6 = 0，不会进入此分支）
             double t = phaseTime;
             double s_prev = calculateAccelDistance() + m_maxReachableVelocity * t4;
             double v5 = m_maxReachableVelocity - jmax * t5 * t5 / 2.0;
             double s5 = s_prev + m_maxReachableVelocity * t5 - jmax * t5 * t5 * t5 / 6.0;
             
             state.jerk = 0.0;
-            state.acceleration = -amax;
-            state.velocity = v5 - amax * t;
-            state.position = s5 + v5 * t - amax * t * t / 2.0;
+            state.acceleration = -a_peak_decel;
+            state.velocity = v5 - a_peak_decel * t;
+            state.position = s5 + v5 * t - a_peak_decel * t * t / 2.0;
             break;
         }
         
         case PlanningPhase::DECEL_JERK_DEC: {
-            // 第7段：减速度减少阶段
+            // 第7段：减速度减少阶段（加速度从 -a_peak_decel 上升到 0）
             double t = phaseTime;
             double s_prev = calculateAccelDistance() + m_maxReachableVelocity * t4;
             double v5 = m_maxReachableVelocity - jmax * t5 * t5 / 2.0;
             double s5 = s_prev + m_maxReachableVelocity * t5 - jmax * t5 * t5 * t5 / 6.0;
-            double v6 = v5 - amax * t6;
-            double s6 = s5 + v5 * t6 - amax * t6 * t6 / 2.0;
+            double v6 = v5 - a_peak_decel * t6;
+            double s6 = s5 + v5 * t6 - a_peak_decel * t6 * t6 / 2.0;
             
             state.jerk = jmax;
-            state.acceleration = -amax + jmax * t;
+            state.acceleration = -a_peak_decel + jmax * t;
             
-            // 修复：确保第7段结束时速度为目标结束速度
+            // 确保第7段结束时速度为目标结束速度
             double t7_total = m_segmentTimes.t7;
             if (t7_total > 0 && t >= t7_total) {
-                state.velocity = m_params.endVelocity;  // 强制设置为目标结束速度
+                state.velocity = m_params.endVelocity;
             } else {
-                state.velocity = v6 - amax * t + jmax * t * t / 2.0;
-                // 确保不会低于目标结束速度
+                state.velocity = v6 - a_peak_decel * t + jmax * t * t / 2.0;
                 if (state.velocity < m_params.endVelocity) {
                     state.velocity = m_params.endVelocity;
                 }
             }
             
-            state.position = s6 + v6 * t - amax * t * t / 2.0 + jmax * t * t * t / 6.0;
+            state.position = s6 + v6 * t - a_peak_decel * t * t / 2.0 + jmax * t * t * t / 6.0;
             break;
         }
         

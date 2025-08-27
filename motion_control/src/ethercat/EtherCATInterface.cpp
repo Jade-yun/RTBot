@@ -33,14 +33,14 @@ DynamicalModel model;
 
 #define TIMESPEC2NS(T) ((uint64_t)(T).tv_sec * NSEC_PER_SEC + (T).tv_nsec)
 
-constexpr int NUM_SLAVES = 1;
-// constexpr int NUM_SLAVES = 6;
+// constexpr int NUM_SLAVES = 1;
+constexpr int NUM_SLAVES = 6;
 
 uint32_t Joint_Zero_Offset[6] = {500000, 150000}; //记录偏移
 
 uint32_t SlaveVID[] = {0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7, 0x000116C7};
-// uint32_t SlavePID[] = {0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402};
-uint32_t SlavePID[] = {0x005e0402, 0x006b0402, 0x005e0402, 0x005e0402, 0x005e0402, 0x005e0402};
+uint32_t SlavePID[] = {0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402, 0x003e0402};
+// uint32_t SlavePID[] = {0x005e0402, 0x006b0402, 0x005e0402, 0x005e0402, 0x005e0402, 0x005e0402};
 // #define PRODUCT_ID 0x005e0402, 0x006b0402, 0x006b0402;
 
 
@@ -328,7 +328,7 @@ void initDrive(ec_master_t* master, uint16_t slavePos, uint8_t mode)
 
 bool EtherCATInterface::init()
 {  
-    csvFile.open("robot_joint_data_movec.csv", std::ios::app);
+    csvFile.open("raw_data_motor.csv", std::ios::app);
 
     master_ = ecrt_request_master(0);
     if (!master_)
@@ -605,7 +605,7 @@ void EtherCATInterface::runTask()
         if (GlobalParams::print.load(std::memory_order_acquire))
         {
 
-            // if (print_cnt % 1 == 0)
+            // if (print_cnt % 10 == 0)
             // {
                 if (csvFile.is_open()) {
                         csvFile << target_pos_pulse[0] << "," << target_pos_pulse[1] << "," << target_pos_pulse[2] 

@@ -120,25 +120,24 @@ int main()
     // std::this_thread::sleep_for(std::chrono::seconds(5));
 
     // // 定义moveJ参数
-    // std::array<float, NUM_JOINTS> joint_pos1 = {60.0f * M_PI / 180.0f, 0, 0, 0, 0, 0};
-    // float speed1 = 30.0f;
+    // std::array<float, NUM_JOINTS> joint_pos1 = {30.0f * M_PI / 180.0f, 0, 0, 0, 0, 0};
+    // float speed1 = 25.0f;
     // float start_speed1 = 0.0f;
-    // float end_speed1 = 10.0f;
+    // float end_speed1 = 0.0f;
 
     // std::cout << "Executing first MoveJ command..." << std::endl;
     // robot.moveJ(joint_pos1, speed1, start_speed1, end_speed1);
     // std::cout << "First MoveJ command finished." << std::endl;
 
 
-    // std::array<float, NUM_JOINTS> joint_pos2 = {120.0f * M_PI / 180.0f, 0, 0, 0, 0, 0};
-    // float speed2 = 20.0f;
-    // float start_speed2 = 10.0f;
+    // std::array<float, NUM_JOINTS> joint_pos2 = {0.0f * M_PI / 180.0f, 0, 0, 0, 0, 0};
+    // float speed2 = 25.0f;
+    // float start_speed2 = 0.0f;
     // float end_speed2 = 0.0f;
 
     // std::cout << "Executing second MoveJ command..." << std::endl;
     // robot.moveJ(joint_pos2, speed2, start_speed2, end_speed2);
     // std::cout << "Second MoveJ command finished." << std::endl;
-
 
     // 定义moveL 参数
     // std::array<float, NUM_JOINTS> pose1 = {280.0f, 150.0f, 540.0f, M_PI, 0, -M_PI};

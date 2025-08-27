@@ -1,0 +1,1 @@
+/opt/EmbedSky/gcc-linaro-7.4.1-2019.02-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-g++ -O3 -DNDEBUG CMakeFiles/test.dir/test_HMI.cpp.o CMakeFiles/test.dir/__/common/src/Utilities/PeriodicTask.cpp.o -o ../bin/test  -lpthread ../lib/librobot_utility.a -lrt 
